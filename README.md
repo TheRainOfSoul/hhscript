@@ -20,7 +20,10 @@ irm https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/menu.ps1 | iex
 
 ## Состав меню
 
-- **Активация/настройка:** MAS, WinUtil (Chris Titus), Win11Debloat
+- **Система:** Информация о ПК · MAS (активация) · Лёгкая чистка
+  (удаление лишних приложений + TEMP + DNS) · Базовые твики
+  (расширения файлов, тёмная тема, классическое меню Win11) — всё inline,
+  без тяжёлых внешних утилит
 - **Программы:** подменю установки — Chrome, 7-Zip, VLC, qBittorrent, AnyDesk,
   Advanced IP Scanner (через `winget`) + Dahua ConfigTool и SmartPSS Lite
   (открываются официальной страницей загрузки в браузере)
