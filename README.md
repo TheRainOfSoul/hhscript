@@ -28,8 +28,7 @@ irm https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/menu.ps1 | iex
   с выбором пунктов **галочками** (↑/↓ навигация, Пробел — отметить, A — все,
   Enter — применить, Esc — отмена; резервный режим — ввод номеров)
 - **Программы:** подменю установки **галочками** — Chrome, 7-Zip, VLC,
-  qBittorrent, AnyDesk, Advanced IP Scanner, ONVIF Device Manager, PuTTY,
-  Wireshark, TeamViewer, RustDesk, Notepad++, CrystalDiskInfo, VC++ Redist
+  qBittorrent, AnyDesk, Advanced IP Scanner, CrystalDiskInfo, VC++ Redist
   (через `winget`) + Dahua ConfigTool и SmartPSS Lite (открываются официальной
   страницей загрузки). Отдельный пункт **«Обновить весь софт»** (`winget upgrade --all`)
 - **Мои скрипты:** слоты под личные `.ps1` из папки `scripts/`

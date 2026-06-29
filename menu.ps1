@@ -25,12 +25,6 @@ $Programs = @(
     @{ Name = 'qBittorrent';          Winget = 'qBittorrent.qBittorrent';       Url = 'https://www.qbittorrent.org/download' }
     @{ Name = 'AnyDesk';              Winget = 'AnyDeskSoftwareGmbH.AnyDesk';    Url = 'https://anydesk.com/download' }
     @{ Name = 'Advanced IP Scanner';  Winget = 'Famatech.AdvancedIPScanner';    Url = 'https://www.advanced-ip-scanner.com/' }
-    @{ Name = 'ONVIF Device Manager'; Winget = '';                              Url = 'https://sourceforge.net/projects/onvifdm/' }
-    @{ Name = 'PuTTY';                Winget = 'PuTTY.PuTTY';                    Url = 'https://www.putty.org/' }
-    @{ Name = 'Wireshark';            Winget = 'WiresharkFoundation.Wireshark';  Url = 'https://www.wireshark.org/download.html' }
-    @{ Name = 'TeamViewer';           Winget = 'TeamViewer.TeamViewer';          Url = 'https://www.teamviewer.com/download/' }
-    @{ Name = 'RustDesk';             Winget = '';                              Url = 'https://rustdesk.com/' }
-    @{ Name = 'Notepad++';            Winget = 'Notepad++.Notepad++';            Url = 'https://notepad-plus-plus.org/downloads/' }
     @{ Name = 'CrystalDiskInfo';      Winget = 'CrystalDewWorld.CrystalDiskInfo'; Url = 'https://crystalmark.info/en/software/crystaldiskinfo/' }
     @{ Name = 'VC++ Redist 2015-2022 (x64)'; Winget = 'Microsoft.VCRedist.2015+.x64'; Url = 'https://aka.ms/vs/17/release/vc_redist.x64.exe' }
     # --- Dahua: пакетов winget нет, открывается официальная страница загрузки в браузере.
