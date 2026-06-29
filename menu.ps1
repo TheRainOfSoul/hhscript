@@ -4,8 +4,7 @@
 # =====================================================================
 
 # --- Ссылка, по которой запускается это меню (для перезапуска от админа).
-#     После настройки домена замени на свою короткую ссылку.
-$LauncherUrl = 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/menu.ps1'
+$LauncherUrl = 'https://get.hhtdom.ru'
 
 # --- Совместимость со старыми системами + кириллица ------------------
 try { [Net.ServicePointManager]::SecurityProtocol = `
