@@ -20,19 +20,15 @@ $HasWinget = [bool](Get-Command winget -ErrorAction SilentlyContinue)
 # =====================================================================
 $Programs = @(
     @{ Name = 'Google Chrome';        Winget = 'Google.Chrome';                 Url = 'https://www.google.com/chrome/' }
-    @{ Name = 'Brave Browser';        Winget = 'Brave.Brave';                   Url = 'https://brave.com/download/' }
-    @{ Name = 'Mozilla Firefox';      Winget = 'Mozilla.Firefox';               Url = 'https://www.mozilla.org/firefox/' }
     @{ Name = '7-Zip';                Winget = '7zip.7zip';                     Url = 'https://www.7-zip.org/' }
     @{ Name = 'VLC media player';     Winget = 'VideoLAN.VLC';                  Url = 'https://www.videolan.org/vlc/' }
-    @{ Name = 'Telegram Desktop';     Winget = 'Telegram.TelegramDesktop';      Url = 'https://desktop.telegram.org/' }
-    @{ Name = 'Discord';              Winget = 'Discord.Discord';               Url = 'https://discord.com/download' }
-    @{ Name = 'Steam';                Winget = 'Valve.Steam';                   Url = 'https://store.steampowered.com/about/' }
-    @{ Name = 'Spotify';              Winget = 'Spotify.Spotify';               Url = 'https://www.spotify.com/download/' }
-    @{ Name = 'Notepad++';            Winget = 'Notepad++.Notepad++';           Url = 'https://notepad-plus-plus.org/downloads/' }
-    @{ Name = 'Visual Studio Code';   Winget = 'Microsoft.VisualStudioCode';    Url = 'https://code.visualstudio.com/' }
     @{ Name = 'qBittorrent';          Winget = 'qBittorrent.qBittorrent';       Url = 'https://www.qbittorrent.org/download' }
-    @{ Name = 'OBS Studio';           Winget = 'OBSProject.OBSStudio';          Url = 'https://obsproject.com/download' }
     @{ Name = 'AnyDesk';              Winget = 'AnyDeskSoftwareGmbH.AnyDesk';    Url = 'https://anydesk.com/download' }
+    @{ Name = 'Advanced IP Scanner';  Winget = 'Famatech.AdvancedIPScanner';    Url = 'https://www.advanced-ip-scanner.com/' }
+    # --- Dahua: пакетов winget нет, открывается официальная страница загрузки в браузере.
+    #     Если ссылка устареет — обнови URL со страницы support.dahuasecurity.com -> Tools.
+    @{ Name = 'Dahua ConfigTool';     Winget = '';  Url = 'https://support.dahuasecurity.com/en/toolsDownloadDetails?IsDpValue=Q93jdSLr94chjRuQ1y%2FcQQ%3D%3D' }
+    @{ Name = 'Dahua SmartPSS Lite';  Winget = '';  Url = 'https://support.dahuasecurity.com/en/toolsDownloadDetails?IsDpValue=Azcw9DN0IRfyUn9i%2Fvq6qA%3D%3D' }
 )
 
 # =====================================================================

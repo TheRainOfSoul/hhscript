@@ -21,8 +21,9 @@ irm https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/menu.ps1 | iex
 ## Состав меню
 
 - **Активация/настройка:** MAS, WinUtil (Chris Titus), Win11Debloat
-- **Программы:** подменю установки через `winget` (Chrome, Brave, 7-Zip, VLC,
-  Telegram, Discord, Steam, Spotify, Notepad++, VS Code, qBittorrent, OBS, AnyDesk…)
+- **Программы:** подменю установки — Chrome, 7-Zip, VLC, qBittorrent, AnyDesk,
+  Advanced IP Scanner (через `winget`) + Dahua ConfigTool и SmartPSS Lite
+  (открываются официальной страницей загрузки в браузере)
 - **Мои скрипты:** слоты под личные `.ps1` из папки `scripts/`
 - Перезапуск от имени администратора, выход
 
