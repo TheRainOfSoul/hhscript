@@ -580,6 +580,95 @@ function Show-NetworkMenu {
 }
 
 # =====================================================================
+#  Калькуляторы для камер
+# =====================================================================
+function Read-Number {
+    param([string]$Prompt, [double]$Default)
+    $in = (Read-Host "   $Prompt [$Default]").Trim().Replace(',', '.')
+    if ($in -eq '') { return $Default }
+    $val = 0.0
+    if ([double]::TryParse($in, [Globalization.NumberStyles]::Any, [Globalization.CultureInfo]::InvariantCulture, [ref]$val)) { return $val }
+    Write-Host "   Не число — беру $Default" -ForegroundColor DarkYellow
+    return $Default
+}
+
+function Read-Bitrate {
+    Write-Host "   Битрейт на камеру:" -ForegroundColor Gray
+    Write-Host "    [1] 2 МП / 1080p  (~4 Mbps)   [по умолч.]"
+    Write-Host "    [2] 4 МП          (~6 Mbps)"
+    Write-Host "    [3] 5 МП          (~8 Mbps)"
+    Write-Host "    [4] 8 МП / 4K     (~12 Mbps)"
+    Write-Host "    [5] ввести вручную"
+    switch ((Read-Host "   Выбор [1]").Trim()) {
+        '2'     { $b = 6 }
+        '3'     { $b = 8 }
+        '4'     { $b = 12 }
+        '5'     { $b = Read-Number 'Битрейт, Mbps' 4 }
+        default { $b = 4 }
+    }
+    if ((Read-Host "   Кодек: [1] H.265 (по умолч.)  [2] H.264 (битрейт x2)").Trim() -eq '2') { $b = $b * 2 }
+    return $b
+}
+
+function Show-RetentionCalc {
+    Write-Box 'HDD -> на сколько дней хватит' 'Cyan'
+    $tb    = Read-Number 'Объём диска, ТБ' 4
+    $cams  = Read-Number 'Кол-во камер' 4
+    $mbps  = Read-Bitrate
+    $hours = Read-Number 'Часов записи в сутки (24 = круглосуточно)' 24
+    $factor = 1.0
+    if ((Read-Host "   Режим: [1] постоянно (по умолч.)  [2] по движению").Trim() -eq '2') {
+        $factor = (Read-Number 'Активность, % (доля времени с движением)' 30) / 100.0
+    }
+
+    $gbPerDay = $cams * $mbps * 0.45 * $hours * $factor
+    if ($gbPerDay -le 0) { Write-Host "`n   Некорректные данные." -ForegroundColor Red; return }
+    $days = ($tb * 1000 * 0.93) / $gbPerDay
+
+    Write-Host ""
+    Write-Kv 'Расход:'    ("{0:N1} ГБ/сутки (все камеры)" -f $gbPerDay)
+    Write-Kv 'Хватит на:' ("{0:N1} дней  (~{1:N1} мес.)" -f $days, ($days / 30))
+    Write-Host "`n   Учтён запас ~7% (форматирование/резерв NVR). Реальные цифры" -ForegroundColor DarkGray
+    Write-Host "   зависят от сцены и кодека." -ForegroundColor DarkGray
+}
+
+function Show-InternetCalc {
+    Write-Box 'Сеть -> нужный интернет (upload)' 'Cyan'
+    $cams = Read-Number 'Кол-во камер' 4
+    Write-Host "   Поток для удалённого просмотра:" -ForegroundColor Gray
+    Write-Host "    [1] дополнительный / substream (~1 Mbps, телефон) [по умолч.]"
+    Write-Host "    [2] основной / mainstream (по пресетам)"
+    if ((Read-Host "   Выбор [1]").Trim() -eq '2') { $mbps = Read-Bitrate }
+    else { $mbps = Read-Number 'Битрейт substream, Mbps' 1 }
+    $viewed  = Read-Number 'Камер смотрят одновременно' $cams
+    $viewers = Read-Number 'Зрителей одновременно' 1
+
+    $upload = $viewed * $mbps * $viewers * 1.2
+    $plan   = [math]::Ceiling($upload / 5) * 5
+    Write-Host ""
+    Write-Kv 'Нужно upload:' ("{0:N1} Mbps (исходящая на объекте)" -f $upload)
+    Write-Kv 'Тариф:'        ("от ~{0:N0} Mbps upload (с запасом)" -f $plan)
+    Write-Host "`n   Важно: удалённый просмотр ограничивает ОТДАЧА (upload) на" -ForegroundColor DarkGray
+    Write-Host "   стороне камер/регистратора, а не download. Тариф выбирай по upload." -ForegroundColor DarkGray
+}
+
+function Show-CalcMenu {
+    do {
+        Write-Box 'Калькуляторы для камер' 'Cyan'
+        Write-Host "   [1] " -NoNewline -ForegroundColor Green; Write-Host "HDD -> на сколько дней хватит диска"
+        Write-Host "   [2] " -NoNewline -ForegroundColor Green; Write-Host "Сеть -> какой интернет (upload) нужен"
+        Write-Host "   [0] " -NoNewline -ForegroundColor Red;   Write-Host "Назад"
+        Write-Host ""
+        switch ((Read-Host "  Выбор").Trim()) {
+            '1' { Show-RetentionCalc; Wait-Continue }
+            '2' { Show-InternetCalc;  Wait-Continue }
+            '0' { return }
+            default { Write-Host "`n  Неверный выбор." -ForegroundColor Yellow; Start-Sleep 1 }
+        }
+    } while ($true)
+}
+
+# =====================================================================
 #  Главное меню
 # =====================================================================
 function Show-Menu {
@@ -606,6 +695,7 @@ function Show-Menu {
     Write-Host "   [8] " -NoNewline -ForegroundColor Green; Write-Host "Мой скрипт №1 (пример)"
     Write-Host "   [9] " -NoNewline -ForegroundColor Green; Write-Host "Мой скрипт №2 (пример)"
     Write-Host ""
+    Write-Host "   [C] " -NoNewline -ForegroundColor Cyan;    Write-Host "Калькуляторы для камер (HDD / интернет)"
     Write-Host "   [N] " -NoNewline -ForegroundColor Magenta; Write-Host "Новый ПК — первичная настройка (программы, драйверы, иконки)"
     Write-Host "   [A] " -NoNewline -ForegroundColor Yellow;  Write-Host "Перезапустить от имени администратора"
     Write-Host "   [0] " -NoNewline -ForegroundColor Red;     Write-Host "Выход"
@@ -631,6 +721,7 @@ do {
         }
         '8' { Invoke-Remote 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/scripts/script1.ps1'; Wait-Continue }
         '9' { Invoke-Remote 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/scripts/script2.ps1'; Wait-Continue }
+        'C' { Show-CalcMenu }
         'N' { Invoke-NewPC; Wait-Continue }
         'A' { Invoke-AdminRestart }
         '0' { }
