@@ -168,74 +168,172 @@ function Show-PCInfo {
 }
 
 # =====================================================================
-#  Лёгкая чистка: удаление типовых лишних приложений + TEMP + DNS
+#  Чек-лист с галочками.
+#  Управление: ↑/↓ — навигация, Пробел — вкл/выкл, A — все/никого,
+#  Enter — применить, Esc — отмена. Если консоль не даёт читать клавиши
+#  (например, перенаправлённый ввод) — резервный режим с вводом номеров.
+#  Возвращает массив индексов отмеченных пунктов или $null при отмене.
+# =====================================================================
+function Show-CheckList {
+    param([string]$Title, [string[]]$Items, [string]$Color = 'Yellow')
+
+    $n     = $Items.Count
+    $state = @($Items | ForEach-Object { $true })   # по умолчанию всё отмечено
+    $cur   = 0
+
+    $interactive = $true
+    try { $null = [Console]::KeyAvailable } catch { $interactive = $false }
+
+    function Draw {
+        Write-Box $Title $Color
+        if ($interactive) {
+            Write-Host "   ↑/↓ — выбор   Пробел — вкл/выкл   A — все   Enter — применить   Esc — отмена`n" -ForegroundColor DarkGray
+        } else {
+            Write-Host "   Номера через пробел — переключить, all/none, пусто — применить, 0 — отмена`n" -ForegroundColor DarkGray
+        }
+        for ($i = 0; $i -lt $n; $i++) {
+            $mark = if ($state[$i]) { '[x]' } else { '[ ]' }
+            if ($interactive -and $i -eq $cur) {
+                Write-Host ("   > $mark " + $Items[$i]) -ForegroundColor Black -BackgroundColor Gray
+            } else {
+                $col = if ($state[$i]) { 'Green' } else { 'Gray' }
+                $num = if ($interactive) { '    ' } else { '{0,2}. ' -f ($i + 1) }
+                Write-Host ("   $num$mark " + $Items[$i]) -ForegroundColor $col
+            }
+        }
+    }
+
+    if (-not $interactive) {
+        Draw
+        while ($true) {
+            $in = (Read-Host "   >").Trim().ToLower()
+            if ($in -eq '0')    { return $null }
+            if ($in -eq '')     { break }
+            if ($in -eq 'all')  { for ($i=0; $i -lt $n; $i++) { $state[$i] = $true };  Draw; continue }
+            if ($in -eq 'none') { for ($i=0; $i -lt $n; $i++) { $state[$i] = $false }; Draw; continue }
+            foreach ($t in ($in -split '[ ,]+')) {
+                if ($t -match '^\d+$' -and [int]$t -ge 1 -and [int]$t -le $n) { $state[[int]$t - 1] = -not $state[[int]$t - 1] }
+            }
+            Draw
+        }
+        return ,@(0..($n - 1) | Where-Object { $state[$_] })
+    }
+
+    while ($true) {
+        Draw
+        $k = [Console]::ReadKey($true)
+        switch ($k.Key) {
+            'UpArrow'   { $cur = ($cur - 1 + $n) % $n }
+            'DownArrow' { $cur = ($cur + 1) % $n }
+            'Spacebar'  { $state[$cur] = -not $state[$cur] }
+            'Enter'     { return ,@(0..($n - 1) | Where-Object { $state[$_] }) }
+            'Escape'    { return $null }
+            default {
+                $ch = ([string]$k.KeyChar).ToLower()
+                if ($ch -eq 'a' -or $ch -eq 'а') {
+                    $allOn = -not ($state -contains $false)
+                    for ($i = 0; $i -lt $n; $i++) { $state[$i] = -not $allOn }
+                }
+            }
+        }
+    }
+}
+
+# =====================================================================
+#  Лёгкая чистка: выбор пунктов галочками (приложения + TEMP + DNS)
 # =====================================================================
 function Invoke-LightClean {
-    Write-Box 'Лёгкая чистка системы' 'Yellow'
-    Write-Host "   Будут удалены типовые лишние приложения (их можно вернуть"
-    Write-Host "   из Microsoft Store), очищена папка TEMP и сброшен кэш DNS.`n"
     if (-not (Test-Admin)) {
-        Write-Host "   Совет: для удаления у всех пользователей запусти из меню" -ForegroundColor DarkYellow
-        Write-Host "   пункт [A] (от администратора).`n" -ForegroundColor DarkYellow
+        Write-Box 'Лёгкая чистка системы' 'Yellow'
+        Write-Host "   Без прав администратора приложения удалятся только для"
+        Write-Host "   текущего пользователя. Для всех — выйди и запусти [A].`n" -ForegroundColor DarkYellow
+        if ((Read-Host "   Продолжить? (y/n)").Trim().ToLower() -ne 'y') { return }
     }
-    if ((Read-Host "   Продолжить? (y/n)").Trim().ToLower() -ne 'y') { return }
 
-    $bloat = @(
-        'Microsoft.BingNews','Microsoft.BingWeather','Microsoft.GetHelp','Microsoft.Getstarted',
-        'Microsoft.MicrosoftSolitaireCollection','Microsoft.People','Microsoft.WindowsFeedbackHub',
-        'Microsoft.ZuneMusic','Microsoft.ZuneVideo','Microsoft.YourPhone','Microsoft.Todos',
-        'Clipchamp.Clipchamp','Microsoft.WindowsMaps','Microsoft.MicrosoftOfficeHub',
-        'Microsoft.OneConnect','Microsoft.3DBuilder','Microsoft.Microsoft3DViewer',
-        'Microsoft.MixedReality.Portal','Microsoft.PowerAutomateDesktop','MicrosoftTeams',
-        'Microsoft.XboxGameOverlay','Microsoft.XboxGamingOverlay','Microsoft.XboxSpeechToTextOverlay'
+    # Пункты: приложения (Appx) и действия (Action). Правится свободно.
+    $items = @(
+        @{ Label = 'Bing Новости';          Appx = 'Microsoft.BingNews' }
+        @{ Label = 'Bing Погода';           Appx = 'Microsoft.BingWeather' }
+        @{ Label = 'Получить помощь';        Appx = 'Microsoft.GetHelp' }
+        @{ Label = 'Советы (Get Started)';   Appx = 'Microsoft.Getstarted' }
+        @{ Label = 'Microsoft Solitaire';    Appx = 'Microsoft.MicrosoftSolitaireCollection' }
+        @{ Label = 'Люди (People)';          Appx = 'Microsoft.People' }
+        @{ Label = 'Центр отзывов';          Appx = 'Microsoft.WindowsFeedbackHub' }
+        @{ Label = 'Groove Музыка';          Appx = 'Microsoft.ZuneMusic' }
+        @{ Label = 'Кино и ТВ';              Appx = 'Microsoft.ZuneVideo' }
+        @{ Label = 'Связь с телефоном';      Appx = 'Microsoft.YourPhone' }
+        @{ Label = 'To Do';                  Appx = 'Microsoft.Todos' }
+        @{ Label = 'Clipchamp';              Appx = 'Clipchamp.Clipchamp' }
+        @{ Label = 'Карты';                  Appx = 'Microsoft.WindowsMaps' }
+        @{ Label = 'Office Hub';             Appx = 'Microsoft.MicrosoftOfficeHub' }
+        @{ Label = 'Teams (личный)';         Appx = 'MicrosoftTeams' }
+        @{ Label = 'Power Automate';         Appx = 'Microsoft.PowerAutomateDesktop' }
+        @{ Label = 'Xbox Game Overlay';      Appx = 'Microsoft.XboxGameOverlay' }
+        @{ Label = 'Xbox Gaming Overlay';    Appx = 'Microsoft.XboxGamingOverlay' }
+        @{ Label = 'Очистить папку TEMP';    Action = 'temp' }
+        @{ Label = 'Сбросить кэш DNS';       Action = 'dns' }
     )
+
+    $sel = Show-CheckList 'Лёгкая чистка — отметь пункты' @($items | ForEach-Object { $_.Label })
+    if ($null -eq $sel)   { Write-Host "`n   Отменено." -ForegroundColor DarkGray; return }
+    if ($sel.Count -eq 0) { Write-Host "`n   Ничего не выбрано." -ForegroundColor DarkGray; return }
+
     $admin = Test-Admin
-    Write-Host "`n   Удаление приложений..." -ForegroundColor DarkGray
-    foreach ($a in $bloat) {
-        if ($admin) {
-            Get-AppxPackage -Name $a -AllUsers -ErrorAction SilentlyContinue | Remove-AppxPackage -AllUsers -ErrorAction SilentlyContinue
-            Get-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue |
-                Where-Object DisplayName -EQ $a |
-                Remove-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue | Out-Null
-        } else {
-            Get-AppxPackage -Name $a -ErrorAction SilentlyContinue | Remove-AppxPackage -ErrorAction SilentlyContinue
+    Write-Host "`n   Выполняю..." -ForegroundColor DarkGray
+    foreach ($idx in $sel) {
+        $it = $items[$idx]
+        if ($it.Appx) {
+            if ($admin) {
+                Get-AppxPackage -Name $it.Appx -AllUsers -ErrorAction SilentlyContinue | Remove-AppxPackage -AllUsers -ErrorAction SilentlyContinue
+                Get-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue |
+                    Where-Object DisplayName -EQ $it.Appx |
+                    Remove-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue | Out-Null
+            } else {
+                Get-AppxPackage -Name $it.Appx -ErrorAction SilentlyContinue | Remove-AppxPackage -ErrorAction SilentlyContinue
+            }
+            Write-Host "   - удалено: $($it.Label)" -ForegroundColor DarkGray
         }
-        Write-Host "   - $a" -ForegroundColor DarkGray
+        elseif ($it.Action -eq 'temp') {
+            Get-ChildItem $env:TEMP -Recurse -Force -ErrorAction SilentlyContinue |
+                Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Host "   - очищен TEMP" -ForegroundColor DarkGray
+        }
+        elseif ($it.Action -eq 'dns') {
+            ipconfig /flushdns | Out-Null
+            Write-Host "   - сброшен кэш DNS" -ForegroundColor DarkGray
+        }
     }
-
-    Write-Host "`n   Очистка TEMP..." -ForegroundColor DarkGray
-    Get-ChildItem $env:TEMP -Recurse -Force -ErrorAction SilentlyContinue |
-        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-    Write-Host "   Сброс кэша DNS..." -ForegroundColor DarkGray
-    ipconfig /flushdns | Out-Null
-
     Write-Host "`n   Готово." -ForegroundColor Green
 }
 
 # =====================================================================
-#  Базовые твики (только HKCU — права админа не нужны)
+#  Базовые твики: выбор пунктов галочками (только HKCU, без админа)
 # =====================================================================
 function Invoke-LightTweaks {
-    Write-Box 'Базовые твики' 'Yellow'
-    Write-Host "   Будут применены безопасные настройки текущего пользователя:"
-    Write-Host "    - показывать расширения файлов"
-    Write-Host "    - показывать скрытые файлы"
-    Write-Host "    - тёмная тема оформления"
-    Write-Host "    - классическое контекстное меню (Windows 11)`n"
-    if ((Read-Host "   Применить? (y/n)").Trim().ToLower() -ne 'y') { return }
+    $adv    = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
+    $theme  = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
+    $search = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Search'
+    $clsid  = 'HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32'
 
-    $adv   = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
-    $theme = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
-    Set-ItemProperty $adv   -Name HideFileExt        -Value 0 -ErrorAction SilentlyContinue
-    Set-ItemProperty $adv   -Name Hidden             -Value 1 -ErrorAction SilentlyContinue
-    Set-ItemProperty $theme -Name AppsUseLightTheme  -Value 0 -ErrorAction SilentlyContinue
-    Set-ItemProperty $theme -Name SystemUsesLightTheme -Value 0 -ErrorAction SilentlyContinue
+    $tweaks = @(
+        @{ Label = 'Показывать расширения файлов';            Do = { Set-ItemProperty $adv -Name HideFileExt -Value 0 -ErrorAction SilentlyContinue } }
+        @{ Label = 'Показывать скрытые файлы';                Do = { Set-ItemProperty $adv -Name Hidden -Value 1 -ErrorAction SilentlyContinue } }
+        @{ Label = 'Тёмная тема оформления';                  Do = { Set-ItemProperty $theme -Name AppsUseLightTheme -Value 0 -ErrorAction SilentlyContinue; Set-ItemProperty $theme -Name SystemUsesLightTheme -Value 0 -ErrorAction SilentlyContinue } }
+        @{ Label = 'Классическое контекстное меню (Win11)';   Do = { New-Item -Path $clsid -Force | Out-Null; Set-ItemProperty $clsid -Name '(default)' -Value '' -ErrorAction SilentlyContinue } }
+        @{ Label = 'Отключить веб-поиск Bing в меню Пуск';    Do = { Set-ItemProperty $search -Name BingSearchEnabled -Value 0 -ErrorAction SilentlyContinue; Set-ItemProperty $search -Name CortanaConsent -Value 0 -ErrorAction SilentlyContinue } }
+        @{ Label = 'Панель задач: значки слева (Win11)';      Do = { Set-ItemProperty $adv -Name TaskbarAl -Value 0 -ErrorAction SilentlyContinue } }
+        @{ Label = 'Скрыть кнопку «Виджеты» (Win11)';         Do = { Set-ItemProperty $adv -Name TaskbarDa -Value 0 -ErrorAction SilentlyContinue } }
+    )
 
-    # Классическое меню Win11 (чтобы вернуть — удали этот ключ CLSID)
-    $clsid = 'HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32'
-    New-Item -Path $clsid -Force | Out-Null
-    Set-ItemProperty $clsid -Name '(default)' -Value '' -ErrorAction SilentlyContinue
+    $sel = Show-CheckList 'Базовые твики — отметь пункты' @($tweaks | ForEach-Object { $_.Label })
+    if ($null -eq $sel)   { Write-Host "`n   Отменено." -ForegroundColor DarkGray; return }
+    if ($sel.Count -eq 0) { Write-Host "`n   Ничего не выбрано." -ForegroundColor DarkGray; return }
 
+    Write-Host "`n   Применяю..." -ForegroundColor DarkGray
+    foreach ($idx in $sel) {
+        & $tweaks[$idx].Do
+        Write-Host "   - $($tweaks[$idx].Label)" -ForegroundColor DarkGray
+    }
     Write-Host "`n   Перезапуск проводника для применения..." -ForegroundColor DarkGray
     Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
     Start-Process explorer
