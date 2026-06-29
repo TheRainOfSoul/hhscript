@@ -28,9 +28,9 @@ irm https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/menu.ps1 | iex
   с выбором пунктов **галочками** (↑/↓ навигация, Пробел — отметить, A — все,
   Enter — применить, Esc — отмена; резервный режим — ввод номеров)
 - **Программы:** подменю установки **галочками** — Chrome, 7-Zip, VLC,
-  qBittorrent, AnyDesk, Advanced IP Scanner, CrystalDiskInfo, VC++ Redist
-  (через `winget`) + Dahua ConfigTool и SmartPSS Lite (открываются официальной
-  страницей загрузки). Отдельный пункт **«Обновить весь софт»** (`winget upgrade --all`)
+  qBittorrent, AnyDesk, Advanced IP Scanner, Winbox (MikroTik), CrystalDiskInfo,
+  VC++ Redist (через `winget`) + Dahua ConfigTool и SmartPSS Lite (открываются
+  официальной страницей загрузки). Отдельный пункт **«Обновить весь софт»** (`winget upgrade --all`)
 - **[N] Новый ПК** — первичная настройка чистой машины одной кнопкой: ставит
   Chrome / 7-Zip / AnyDesk, выносит иконку «Этот компьютер» на рабочий стол,
   отключает виджеты и устанавливает драйверы из **официального источника**
