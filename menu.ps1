@@ -360,6 +360,154 @@ function Show-ProgramMenu {
 }
 
 # =====================================================================
+#  Новый ПК — первичная настройка
+#  Программы + иконка «Этот компьютер» + откл. виджетов + драйверы.
+#  Драйверы (вариант A): официальные CLI для Dell/HP/Lenovo, для розничных
+#  плат — официальная страница вендора в браузере. Без Windows Update.
+# =====================================================================
+function Open-DriverPage {
+    param([string]$Maker, [string]$Model)
+    $map = @{
+        'asus'     = 'https://www.asus.com/support/'
+        'gigabyte' = 'https://www.gigabyte.com/Support'
+        'msi'      = 'https://www.msi.com/support/'
+        'asrock'   = 'https://www.asrock.com/support/index.asp'
+        'biostar'  = 'https://www.biostar.com.tw/app/en/support/'
+    }
+    $url = $null
+    foreach ($k in $map.Keys) { if ($Maker -match $k) { $url = $map[$k]; break } }
+    if (-not $url) { $url = 'https://www.google.com/search?q=' + [uri]::EscapeDataString("$Maker $Model drivers") }
+    Write-Host "   Модель для поиска: $Maker $Model" -ForegroundColor Cyan
+    Write-Host "   Открываю официальную страницу: $url" -ForegroundColor DarkGray
+    Start-Process $url
+}
+
+function Install-DellDriver {
+    if (-not $HasWinget) { Write-Host "   Нужен winget для Dell Command Update." -ForegroundColor Yellow; return }
+    Write-Host "   Установка Dell Command Update (официальный инструмент Dell)..." -ForegroundColor DarkGray
+    winget install --id Dell.CommandUpdate.Universal -e --source winget --accept-package-agreements --accept-source-agreements
+    $dcu = @("$env:ProgramFiles\Dell\CommandUpdate\dcu-cli.exe", "${env:ProgramFiles(x86)}\Dell\CommandUpdate\dcu-cli.exe") |
+        Where-Object { Test-Path $_ } | Select-Object -First 1
+    if (-not $dcu) { Write-Host "   dcu-cli не найден — запусти Dell Command Update вручную." -ForegroundColor Yellow; return }
+    Write-Host "   Поиск и установка драйверов с сайта Dell..." -ForegroundColor DarkGray
+    & $dcu /scan
+    & $dcu /applyUpdates -reboot=disable
+}
+
+function Install-HpDriver {
+    Write-Host "   Подготовка HP CMSL (официальный модуль HP)..." -ForegroundColor DarkGray
+    try {
+        if (-not (Get-Module -ListAvailable HPCMSL)) {
+            Install-PackageProvider -Name NuGet -Force -ErrorAction SilentlyContinue | Out-Null
+            Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue
+            Install-Module HPCMSL -Force -AcceptLicense -Scope AllUsers -ErrorAction Stop
+        }
+        Import-Module HPCMSL -ErrorAction Stop
+        Write-Host "   Загрузка и установка драйверов с сайта HP..." -ForegroundColor DarkGray
+        Get-SoftpaqList -Category Driver -ErrorAction Stop | ForEach-Object {
+            $num = [int]($_.id -replace '\D', '')
+            Write-Host "    - $($_.Name)" -ForegroundColor DarkGray
+            Get-Softpaq -Number $num -Action Install -ErrorAction SilentlyContinue | Out-Null
+        }
+    } catch {
+        Write-Host "   HP CMSL недоступен ($($_.Exception.Message))." -ForegroundColor Yellow
+        Write-Host "   Открываю официальную страницу драйверов HP..." -ForegroundColor DarkGray
+        Start-Process 'https://support.hp.com/us-en/drivers'
+    }
+}
+
+function Install-LenovoDriver {
+    Write-Host "   Подготовка LSUClient (репозиторий Lenovo)..." -ForegroundColor DarkGray
+    try {
+        if (-not (Get-Module -ListAvailable LSUClient)) {
+            Install-PackageProvider -Name NuGet -Force -ErrorAction SilentlyContinue | Out-Null
+            Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue
+            Install-Module LSUClient -Force -Scope AllUsers -ErrorAction Stop
+        }
+        Import-Module LSUClient -ErrorAction Stop
+        Write-Host "   Поиск драйверов с сайта Lenovo..." -ForegroundColor DarkGray
+        $updates = Get-LSUpdate -ErrorAction Stop
+        if ($updates) { $updates | Install-LSUpdate -ErrorAction SilentlyContinue }
+        else { Write-Host "   Обновлений драйверов не найдено." -ForegroundColor Green }
+    } catch {
+        Write-Host "   LSUClient недоступен ($($_.Exception.Message))." -ForegroundColor Yellow
+        Write-Host "   Открываю официальную страницу драйверов Lenovo..." -ForegroundColor DarkGray
+        Start-Process 'https://support.lenovo.com/solutions/ht003029'
+    }
+}
+
+function Install-Driver {
+    $bb = Get-CimInstance Win32_BaseBoard -ErrorAction SilentlyContinue
+    $cs = Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue
+    $vendor = "$($cs.Manufacturer)"
+    Write-Kv 'Система:'    "$vendor $($cs.Model)"
+    Write-Kv 'Мат. плата:' "$($bb.Manufacturer) $($bb.Product)"
+
+    $missing = @(Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
+        Where-Object { $_.Status -ne 'OK' -and $_.Class -notin 'SoftwareDevice', 'SoftwareComponent' })
+    if ($missing.Count) {
+        Write-Host "`n   Устройства с проблемой драйвера ($($missing.Count)):" -ForegroundColor Yellow
+        $missing | Select-Object -Unique FriendlyName | ForEach-Object {
+            Write-Host "    - $($_.FriendlyName)" -ForegroundColor DarkGray
+        }
+    } else {
+        Write-Host "`n   Устройств без драйвера не обнаружено." -ForegroundColor Green
+    }
+
+    Write-Host ""
+    $v = $vendor.ToLower()
+    if     ($v -match 'dell')       { Install-DellDriver }
+    elseif ($v -match 'hp|hewlett') { Install-HpDriver }
+    elseif ($v -match 'lenovo')     { Install-LenovoDriver }
+    else {
+        Write-Host "   Бренд не Dell/HP/Lenovo — официального CLI-загрузчика нет." -ForegroundColor Yellow
+        Open-DriverPage $bb.Manufacturer $bb.Product
+    }
+}
+
+function Invoke-NewPC {
+    Write-Box 'Новый ПК — первичная настройка' 'Green'
+    if (-not (Test-Admin)) {
+        Write-Host "   Часть шагов (драйверы, машинная установка, политика виджетов)" -ForegroundColor Yellow
+        Write-Host "   требует прав администратора. Лучше выйти и запустить [A].`n" -ForegroundColor Yellow
+    }
+    if ((Read-Host "   Начать настройку нового ПК? (y/n)").Trim().ToLower() -ne 'y') { return }
+
+    # 1/4 — программы
+    Write-Host "`n  [1/4] Установка программ (Chrome, 7-Zip, AnyDesk)..." -ForegroundColor Cyan
+    if ($HasWinget) {
+        foreach ($id in 'Google.Chrome', '7zip.7zip', 'AnyDeskSoftwareGmbH.AnyDesk') {
+            Write-Host "   winget: $id" -ForegroundColor DarkGray
+            winget install --id $id -e --source winget --accept-package-agreements --accept-source-agreements
+        }
+    } else { Write-Host "   winget не найден — пропускаю установку программ." -ForegroundColor Yellow }
+
+    # 2/4 — иконка «Этот компьютер»
+    Write-Host "`n  [2/4] Иконка «Этот компьютер» на рабочий стол..." -ForegroundColor Cyan
+    $ns = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\NewStartPanel'
+    New-Item -Path $ns -Force | Out-Null
+    Set-ItemProperty $ns -Name '{20D04FE0-3AEA-1069-A2D8-08002B30309D}' -Value 0 -Type DWord -ErrorAction SilentlyContinue
+
+    # 3/4 — отключить виджеты
+    Write-Host "`n  [3/4] Отключение виджетов..." -ForegroundColor Cyan
+    Set-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name TaskbarDa -Value 0 -ErrorAction SilentlyContinue
+    if (Test-Admin) {
+        $dsh = 'HKLM:\SOFTWARE\Policies\Microsoft\Dsh'
+        New-Item -Path $dsh -Force | Out-Null
+        Set-ItemProperty $dsh -Name AllowNewsAndInterests -Value 0 -Type DWord -ErrorAction SilentlyContinue
+    }
+
+    # 4/4 — драйверы
+    Write-Host "`n  [4/4] Драйверы (официальный источник, без Windows Update)..." -ForegroundColor Cyan
+    Install-Driver
+
+    Write-Host "`n  Перезапуск проводника для применения иконок и виджетов..." -ForegroundColor DarkGray
+    Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
+    Start-Process explorer
+    Write-Host "`n  Готово. Новый ПК настроен." -ForegroundColor Green
+}
+
+# =====================================================================
 #  Сетевые утилиты
 # =====================================================================
 function Switch-Dns {
@@ -456,8 +604,9 @@ function Show-Menu {
     Write-Host "   [8] " -NoNewline -ForegroundColor Green; Write-Host "Мой скрипт №1 (пример)"
     Write-Host "   [9] " -NoNewline -ForegroundColor Green; Write-Host "Мой скрипт №2 (пример)"
     Write-Host ""
-    Write-Host "   [A] " -NoNewline -ForegroundColor Yellow; Write-Host "Перезапустить от имени администратора"
-    Write-Host "   [0] " -NoNewline -ForegroundColor Red;    Write-Host "Выход"
+    Write-Host "   [N] " -NoNewline -ForegroundColor Magenta; Write-Host "Новый ПК — первичная настройка (программы, драйверы, иконки)"
+    Write-Host "   [A] " -NoNewline -ForegroundColor Yellow;  Write-Host "Перезапустить от имени администратора"
+    Write-Host "   [0] " -NoNewline -ForegroundColor Red;     Write-Host "Выход"
     Write-Host ""
 }
 
@@ -480,6 +629,7 @@ do {
         }
         '8' { Invoke-Remote 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/scripts/script1.ps1'; Wait-Continue }
         '9' { Invoke-Remote 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/scripts/script2.ps1'; Wait-Continue }
+        'N' { Invoke-NewPC; Wait-Continue }
         'A' { Invoke-AdminRestart }
         '0' { }
         default { Write-Host "`n  Неверный выбор." -ForegroundColor Yellow; Start-Sleep 1 }
