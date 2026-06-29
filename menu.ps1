@@ -40,7 +40,7 @@ function Test-Admin {
         [Security.Principal.WindowsBuiltinRole]::Administrator)
 }
 
-function Restart-AsAdmin {
+function Invoke-AdminRestart {
     Write-Host "`n  Перезапуск от имени администратора..." -ForegroundColor Yellow
     Start-Process powershell -Verb RunAs -ArgumentList @(
         '-NoProfile','-ExecutionPolicy','Bypass','-Command',"irm $LauncherUrl | iex")
@@ -72,7 +72,7 @@ function Install-Program {
     }
 }
 
-function Pause-Menu {
+function Wait-Continue {
     Write-Host "`n  Нажми Enter для продолжения..." -ForegroundColor DarkGray
     [void](Read-Host)
 }
@@ -309,7 +309,7 @@ function Invoke-LightClean {
 # =====================================================================
 #  Базовые твики: выбор пунктов галочками (только HKCU, без админа)
 # =====================================================================
-function Invoke-LightTweaks {
+function Invoke-LightTweak {
     $adv    = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
     $theme  = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
     $search = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Search'
@@ -343,7 +343,7 @@ function Invoke-LightTweaks {
 # =====================================================================
 #  Подменю: установка программ
 # =====================================================================
-function Show-Programs {
+function Show-ProgramMenu {
     do {
         Write-Box 'Установка программ' 'Magenta'
         if (-not $HasWinget) {
@@ -362,11 +362,11 @@ function Show-Programs {
         if ($sel -eq '0') { return }
         elseif ($sel -eq 'V') {
             foreach ($p in $Programs) { Install-Program $p }
-            Pause-Menu
+            Wait-Continue
         }
         elseif ($sel -match '^\d+$' -and [int]$sel -ge 1 -and [int]$sel -le $Programs.Count) {
             Install-Program $Programs[[int]$sel - 1]
-            Pause-Menu
+            Wait-Continue
         }
         else { Write-Host "`n  Неверный выбор." -ForegroundColor Yellow; Start-Sleep 1 }
     } while ($true)
@@ -406,14 +406,14 @@ do {
     Show-Menu
     $choice = (Read-Host "  Выбор").Trim().ToUpper()
     switch ($choice) {
-        '1' { Show-PCInfo;        Pause-Menu }
-        '2' { Invoke-Remote 'https://get.activated.win'; Pause-Menu }    # MAS
-        '3' { Invoke-LightClean;  Pause-Menu }
-        '4' { Invoke-LightTweaks; Pause-Menu }
-        '5' { Show-Programs }
-        '6' { Invoke-Remote 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/scripts/script1.ps1'; Pause-Menu }
-        '7' { Invoke-Remote 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/scripts/script2.ps1'; Pause-Menu }
-        'A' { Restart-AsAdmin }
+        '1' { Show-PCInfo;        Wait-Continue }
+        '2' { Invoke-Remote 'https://get.activated.win'; Wait-Continue }    # MAS
+        '3' { Invoke-LightClean;  Wait-Continue }
+        '4' { Invoke-LightTweak; Wait-Continue }
+        '5' { Show-ProgramMenu }
+        '6' { Invoke-Remote 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/scripts/script1.ps1'; Wait-Continue }
+        '7' { Invoke-Remote 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/scripts/script2.ps1'; Wait-Continue }
+        'A' { Invoke-AdminRestart }
         '0' { }
         default { Write-Host "`n  Неверный выбор." -ForegroundColor Yellow; Start-Sleep 1 }
     }
