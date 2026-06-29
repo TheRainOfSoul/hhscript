@@ -175,10 +175,10 @@ function Show-PCInfo {
 #  Возвращает массив индексов отмеченных пунктов или $null при отмене.
 # =====================================================================
 function Show-CheckList {
-    param([string]$Title, [string[]]$Items, [string]$Color = 'Yellow')
+    param([string]$Title, [string[]]$Items, [string]$Color = 'Yellow', [bool]$DefaultChecked = $true)
 
     $n     = $Items.Count
-    $state = @($Items | ForEach-Object { $true })   # по умолчанию всё отмечено
+    $state = @($Items | ForEach-Object { $DefaultChecked })   # стартовое состояние галочек
     $cur   = 0
 
     $interactive = $true
@@ -344,32 +344,17 @@ function Invoke-LightTweak {
 #  Подменю: установка программ
 # =====================================================================
 function Show-ProgramMenu {
-    do {
-        Write-Box 'Установка программ' 'Magenta'
-        if (-not $HasWinget) {
-            Write-Host "   winget не найден — пункты откроют сайт загрузки.`n" -ForegroundColor Yellow
-        }
-        for ($i = 0; $i -lt $Programs.Count; $i++) {
-            Write-Host ("   [{0,2}] " -f ($i + 1)) -NoNewline -ForegroundColor Green
-            Write-Host $Programs[$i].Name
-        }
-        Write-Host ""
-        Write-Host "   [V] " -NoNewline -ForegroundColor Cyan;   Write-Host "Установить ВСЁ"
-        Write-Host "   [0] " -NoNewline -ForegroundColor Red;    Write-Host "Назад"
-        Write-Host ""
+    # Метки: пункты без winget откроют сайт загрузки — помечаем «(сайт)»
+    $labels = @($Programs | ForEach-Object {
+        if ($HasWinget -and $_.Winget) { $_.Name } else { $_.Name + '  (сайт)' }
+    })
+    $sel = Show-CheckList 'Установка программ — отметь нужное' $labels 'Magenta' $false
+    if ($null -eq $sel)   { return }
+    if ($sel.Count -eq 0) { Write-Host "`n   Ничего не выбрано." -ForegroundColor DarkGray; Wait-Continue; return }
 
-        $sel = (Read-Host "  Выбор").Trim().ToUpper()
-        if ($sel -eq '0') { return }
-        elseif ($sel -eq 'V') {
-            foreach ($p in $Programs) { Install-Program $p }
-            Wait-Continue
-        }
-        elseif ($sel -match '^\d+$' -and [int]$sel -ge 1 -and [int]$sel -le $Programs.Count) {
-            Install-Program $Programs[[int]$sel - 1]
-            Wait-Continue
-        }
-        else { Write-Host "`n  Неверный выбор." -ForegroundColor Yellow; Start-Sleep 1 }
-    } while ($true)
+    foreach ($idx in $sel) { Install-Program $Programs[$idx] }
+    Write-Host "`n   Установка завершена." -ForegroundColor Green
+    Wait-Continue
 }
 
 # =====================================================================
