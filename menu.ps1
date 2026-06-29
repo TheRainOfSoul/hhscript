@@ -25,6 +25,14 @@ $Programs = @(
     @{ Name = 'qBittorrent';          Winget = 'qBittorrent.qBittorrent';       Url = 'https://www.qbittorrent.org/download' }
     @{ Name = 'AnyDesk';              Winget = 'AnyDeskSoftwareGmbH.AnyDesk';    Url = 'https://anydesk.com/download' }
     @{ Name = 'Advanced IP Scanner';  Winget = 'Famatech.AdvancedIPScanner';    Url = 'https://www.advanced-ip-scanner.com/' }
+    @{ Name = 'ONVIF Device Manager'; Winget = '';                              Url = 'https://sourceforge.net/projects/onvifdm/' }
+    @{ Name = 'PuTTY';                Winget = 'PuTTY.PuTTY';                    Url = 'https://www.putty.org/' }
+    @{ Name = 'Wireshark';            Winget = 'WiresharkFoundation.Wireshark';  Url = 'https://www.wireshark.org/download.html' }
+    @{ Name = 'TeamViewer';           Winget = 'TeamViewer.TeamViewer';          Url = 'https://www.teamviewer.com/download/' }
+    @{ Name = 'RustDesk';             Winget = '';                              Url = 'https://rustdesk.com/' }
+    @{ Name = 'Notepad++';            Winget = 'Notepad++.Notepad++';            Url = 'https://notepad-plus-plus.org/downloads/' }
+    @{ Name = 'CrystalDiskInfo';      Winget = 'CrystalDewWorld.CrystalDiskInfo'; Url = 'https://crystalmark.info/en/software/crystaldiskinfo/' }
+    @{ Name = 'VC++ Redist 2015-2022 (x64)'; Winget = 'Microsoft.VCRedist.2015+.x64'; Url = 'https://aka.ms/vs/17/release/vc_redist.x64.exe' }
     # --- Dahua: пакетов winget нет, открывается официальная страница загрузки в браузере.
     #     Если ссылка устареет — обнови URL со страницы support.dahuasecurity.com -> Tools.
     @{ Name = 'Dahua ConfigTool';     Winget = '';  Url = 'https://support.dahuasecurity.com/en/toolsDownloadDetails?IsDpValue=Q93jdSLr94chjRuQ1y%2FcQQ%3D%3D' }
@@ -358,6 +366,76 @@ function Show-ProgramMenu {
 }
 
 # =====================================================================
+#  Сетевые утилиты
+# =====================================================================
+function Switch-Dns {
+    param([string[]]$Servers)   # пусто = вернуть автоматический (DHCP)
+    if (-not (Test-Admin)) {
+        Write-Host "`n   Нужны права администратора — выйди и запусти [A]." -ForegroundColor Yellow
+        return
+    }
+    $a = Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object Status -EQ 'Up' | Select-Object -First 1
+    if (-not $a) { Write-Host "`n   Активный адаптер не найден." -ForegroundColor Red; return }
+    if ($Servers -and $Servers.Count) {
+        Set-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ServerAddresses $Servers -ErrorAction SilentlyContinue
+        Write-Host "`n   DNS на '$($a.Name)' -> $($Servers -join ', ')" -ForegroundColor Green
+    } else {
+        Set-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ResetServerAddresses -ErrorAction SilentlyContinue
+        Write-Host "`n   DNS на '$($a.Name)' -> автоматический (DHCP)" -ForegroundColor Green
+    }
+    ipconfig /flushdns | Out-Null
+}
+
+function Repair-Network {
+    if (-not (Test-Admin)) {
+        Write-Host "`n   Нужны права администратора — выйди и запусти [A]." -ForegroundColor Yellow
+        return
+    }
+    Write-Host "`n   Сброс Winsock и стека TCP/IP..." -ForegroundColor DarkGray
+    netsh winsock reset | Out-Host
+    netsh int ip reset   | Out-Host
+    ipconfig /flushdns   | Out-Null
+    Write-Host "`n   Готово. Перезагрузи ПК, чтобы изменения вступили в силу." -ForegroundColor Green
+}
+
+function Show-AdapterInfo {
+    Write-Box 'Сетевые адаптеры' 'Cyan'
+    Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object Status -EQ 'Up' | ForEach-Object {
+        $ip = (Get-NetIPAddress -InterfaceIndex $_.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -First 1).IPAddress
+        Write-Kv $_.Name "IP $ip   MAC $($_.MacAddress)   $($_.LinkSpeed)"
+    }
+}
+
+function Show-NetworkMenu {
+    do {
+        Write-Box 'Сетевые утилиты' 'Cyan'
+        Write-Host "   [1] " -NoNewline -ForegroundColor Green; Write-Host "Конфигурация сети (ipconfig /all)"
+        Write-Host "   [2] " -NoNewline -ForegroundColor Green; Write-Host "Адаптеры: IP / MAC / скорость"
+        Write-Host "   [3] " -NoNewline -ForegroundColor Green; Write-Host "Ping хоста"
+        Write-Host "   [4] " -NoNewline -ForegroundColor Green; Write-Host "Трассировка (tracert)"
+        Write-Host "   [5] " -NoNewline -ForegroundColor Green; Write-Host "DNS -> Cloudflare (1.1.1.1)        [админ]"
+        Write-Host "   [6] " -NoNewline -ForegroundColor Green; Write-Host "DNS -> Google (8.8.8.8)            [админ]"
+        Write-Host "   [7] " -NoNewline -ForegroundColor Green; Write-Host "DNS -> автоматический (DHCP)       [админ]"
+        Write-Host "   [8] " -NoNewline -ForegroundColor Green; Write-Host "Сброс сети (Winsock + TCP/IP)      [админ]"
+        Write-Host "   [0] " -NoNewline -ForegroundColor Red;   Write-Host "Назад"
+        Write-Host ""
+        $c = (Read-Host "  Выбор").Trim()
+        switch ($c) {
+            '1' { ipconfig /all | Out-Host; Wait-Continue }
+            '2' { Show-AdapterInfo; Wait-Continue }
+            '3' { $h = Read-Host "   Хост или IP"; if ($h) { Test-Connection -ComputerName $h -Count 4 -ErrorAction SilentlyContinue | Format-Table -AutoSize | Out-Host }; Wait-Continue }
+            '4' { $h = Read-Host "   Хост или IP"; if ($h) { tracert $h | Out-Host }; Wait-Continue }
+            '5' { Switch-Dns '1.1.1.1', '1.0.0.1'; Wait-Continue }
+            '6' { Switch-Dns '8.8.8.8', '8.8.4.4'; Wait-Continue }
+            '7' { Switch-Dns @();                  Wait-Continue }
+            '8' { Repair-Network;                  Wait-Continue }
+            '0' { return }
+            default { Write-Host "`n  Неверный выбор." -ForegroundColor Yellow; Start-Sleep 1 }
+        }
+    } while ($true)
+}
+
+# =====================================================================
 #  Главное меню
 # =====================================================================
 function Show-Menu {
@@ -374,13 +452,15 @@ function Show-Menu {
     Write-Host "   [2] " -NoNewline -ForegroundColor Green; Write-Host "MAS — активация Windows / Office"
     Write-Host "   [3] " -NoNewline -ForegroundColor Green; Write-Host "Лёгкая чистка (удалить лишнее + TEMP + DNS)"
     Write-Host "   [4] " -NoNewline -ForegroundColor Green; Write-Host "Базовые твики (расширения, тёмная тема, меню)"
+    Write-Host "   [5] " -NoNewline -ForegroundColor Green; Write-Host "Сетевые утилиты (DNS, ping, сброс сети)"
     Write-Host ""
     Write-Host "  --- Программы ---" -ForegroundColor DarkCyan
-    Write-Host "   [5] " -NoNewline -ForegroundColor Green; Write-Host "Установить программы (подменю)"
+    Write-Host "   [6] " -NoNewline -ForegroundColor Green; Write-Host "Установить программы (галочками)"
+    Write-Host "   [7] " -NoNewline -ForegroundColor Green; Write-Host "Обновить весь софт (winget upgrade)"
     Write-Host ""
     Write-Host "  --- Мои скрипты ---" -ForegroundColor DarkCyan
-    Write-Host "   [6] " -NoNewline -ForegroundColor Green; Write-Host "Мой скрипт №1 (пример)"
-    Write-Host "   [7] " -NoNewline -ForegroundColor Green; Write-Host "Мой скрипт №2 (пример)"
+    Write-Host "   [8] " -NoNewline -ForegroundColor Green; Write-Host "Мой скрипт №1 (пример)"
+    Write-Host "   [9] " -NoNewline -ForegroundColor Green; Write-Host "Мой скрипт №2 (пример)"
     Write-Host ""
     Write-Host "   [A] " -NoNewline -ForegroundColor Yellow; Write-Host "Перезапустить от имени администратора"
     Write-Host "   [0] " -NoNewline -ForegroundColor Red;    Write-Host "Выход"
@@ -394,10 +474,18 @@ do {
         '1' { Show-PCInfo;        Wait-Continue }
         '2' { Invoke-Remote 'https://get.activated.win'; Wait-Continue }    # MAS
         '3' { Invoke-LightClean;  Wait-Continue }
-        '4' { Invoke-LightTweak; Wait-Continue }
-        '5' { Show-ProgramMenu }
-        '6' { Invoke-Remote 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/scripts/script1.ps1'; Wait-Continue }
-        '7' { Invoke-Remote 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/scripts/script2.ps1'; Wait-Continue }
+        '4' { Invoke-LightTweak;  Wait-Continue }
+        '5' { Show-NetworkMenu }
+        '6' { Show-ProgramMenu }
+        '7' {
+            if ($HasWinget) {
+                Write-Host "`n   Обновление всего установленного софта..." -ForegroundColor Green
+                winget upgrade --all --include-unknown --accept-package-agreements --accept-source-agreements
+            } else { Write-Host "`n   winget не найден." -ForegroundColor Yellow }
+            Wait-Continue
+        }
+        '8' { Invoke-Remote 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/scripts/script1.ps1'; Wait-Continue }
+        '9' { Invoke-Remote 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/scripts/script2.ps1'; Wait-Continue }
         'A' { Invoke-AdminRestart }
         '0' { }
         default { Write-Host "`n  Неверный выбор." -ForegroundColor Yellow; Start-Sleep 1 }
