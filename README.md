@@ -29,7 +29,7 @@ irm https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/menu.ps1 | iex
   Enter — применить, Esc — отмена; резервный режим — ввод номеров)
 - **Программы:** подменю установки **галочками** — Chrome, 7-Zip, VLC,
   qBittorrent, AnyDesk, Advanced IP Scanner, Winbox (MikroTik), Speedtest CLI,
-  CrystalDiskInfo, VC++ Redist (через `winget`) + Dahua ConfigTool и SmartPSS Lite (открываются
+  CrystalDiskInfo, HWiNFO, VC++ Redist (через `winget`) + Dahua ConfigTool и SmartPSS Lite (открываются
   официальной страницей загрузки). Отдельный пункт **«Обновить весь софт»** (`winget upgrade --all`)
 - **[D] Обновление драйверов** — определяет производителя и ставит драйверы из
   **официального источника** (без Windows Update): Dell → Dell Command Update

@@ -28,6 +28,7 @@ $Programs = @(
     @{ Name = 'Winbox (MikroTik)';    Winget = 'Mikrotik.Winbox';                Url = 'https://mikrotik.com/download' }
     @{ Name = 'Speedtest CLI (Ookla)'; Winget = 'Ookla.Speedtest.CLI';            Url = 'https://www.speedtest.net/apps/cli' }
     @{ Name = 'CrystalDiskInfo';      Winget = 'CrystalDewWorld.CrystalDiskInfo'; Url = 'https://crystalmark.info/en/software/crystaldiskinfo/' }
+    @{ Name = 'HWiNFO (мониторинг)';  Winget = 'REALiX.HWiNFO';                  Url = 'https://www.hwinfo.com/download/' }
     @{ Name = 'VC++ Redist 2015-2022 (x64)'; Winget = 'Microsoft.VCRedist.2015+.x64'; Url = 'https://aka.ms/vs/17/release/vc_redist.x64.exe' }
     # --- Dahua: пакетов winget нет, открывается официальная страница загрузки в браузере.
     #     Если ссылка устареет — обнови URL со страницы support.dahuasecurity.com -> Tools.
