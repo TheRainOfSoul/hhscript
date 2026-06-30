@@ -37,6 +37,9 @@ irm https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/menu.ps1 | iex
   (dcu-cli), HP → HP Image Assistant (HPIA), Lenovo → Thin Installer,
   Intel-платы → Intel DSA, AMD/прочее → официальная страница вендора.
   Требует прав администратора ([A]).
+- **[T] Стресс-тест ПК** — отдельный скрипт `scripts/stresstest.ps1`: встроенный
+  CPU-прожиг (100% всех ядер на N минут, чистый PowerShell) + запуск OCCT /
+  FurMark / CrystalDiskMark / HWiNFO. Запускается и сам по себе через `irm`.
 - **[N] Новый ПК** — первичная настройка чистой машины одной кнопкой: ставит
   Chrome / 7-Zip / AnyDesk, выносит иконку «Этот компьютер» на рабочий стол,
   отключает виджеты и обновляет драйверы (та же логика, что **[D]**).

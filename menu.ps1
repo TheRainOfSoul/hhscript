@@ -713,6 +713,7 @@ function Show-Menu {
     Write-Host ""
     Write-Host "   [C] " -NoNewline -ForegroundColor Cyan;    Write-Host "Калькуляторы для камер (HDD / интернет)"
     Write-Host "   [D] " -NoNewline -ForegroundColor Green;   Write-Host "Обновление драйверов (Dell/HP/Lenovo/Intel)"
+    Write-Host "   [T] " -NoNewline -ForegroundColor Green;   Write-Host "Стресс-тест ПК (CPU-прожиг + OCCT/FurMark/диск)"
     Write-Host "   [N] " -NoNewline -ForegroundColor Magenta; Write-Host "Новый ПК — первичная настройка (программы, драйверы, иконки)"
     Write-Host "   [A] " -NoNewline -ForegroundColor Yellow;  Write-Host "Перезапустить от имени администратора"
     Write-Host "   [0] " -NoNewline -ForegroundColor Red;     Write-Host "Выход"
@@ -740,6 +741,7 @@ do {
         '9' { Invoke-Remote 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/scripts/script2.ps1'; Wait-Continue }
         'C' { Show-CalcMenu }
         'D' { Invoke-DriverUpdate; Wait-Continue }
+        'T' { Invoke-Remote 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/scripts/stresstest.ps1'; Wait-Continue }
         'N' { Invoke-NewPC; Wait-Continue }
         'A' { Invoke-AdminRestart }
         '0' { }
