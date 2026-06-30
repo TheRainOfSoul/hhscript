@@ -31,12 +31,15 @@ irm https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/menu.ps1 | iex
   qBittorrent, AnyDesk, Advanced IP Scanner, Winbox (MikroTik), Speedtest CLI,
   CrystalDiskInfo, VC++ Redist (через `winget`) + Dahua ConfigTool и SmartPSS Lite (открываются
   официальной страницей загрузки). Отдельный пункт **«Обновить весь софт»** (`winget upgrade --all`)
+- **[D] Обновление драйверов** — определяет производителя и ставит драйверы из
+  **официального источника** (без Windows Update): Dell → Dell Command Update
+  (dcu-cli), HP → HP Image Assistant (HPIA), Lenovo → Thin Installer,
+  Intel-платы → Intel DSA, AMD/прочее → официальная страница вендора.
+  Требует прав администратора ([A]).
 - **[N] Новый ПК** — первичная настройка чистой машины одной кнопкой: ставит
   Chrome / 7-Zip / AnyDesk, выносит иконку «Этот компьютер» на рабочий стол,
-  отключает виджеты и устанавливает драйверы из **официального источника**
-  (Dell/HP/Lenovo — штатными CLI: Dell Command Update / HP CMSL / LSUClient;
-  розничные платы ASUS/Gigabyte/MSI/ASRock — открывает официальную страницу
-  вендора). **Без Windows Update.** Требует прав администратора ([A]).
+  отключает виджеты и обновляет драйверы (та же логика, что **[D]**).
+  **Без Windows Update.** Требует прав администратора ([A]).
 - **[C] Калькуляторы для камер** — *HDD → на сколько дней хватит диска*
   (по объёму, числу камер, битрейту, режиму записи) и *Сеть → нужная
   скорость интернета (upload)* для удалённого просмотра. Считается локально.

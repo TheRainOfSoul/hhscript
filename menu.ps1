@@ -364,8 +364,9 @@ function Show-ProgramMenu {
 # =====================================================================
 #  Новый ПК — первичная настройка
 #  Программы + иконка «Этот компьютер» + откл. виджетов + драйверы.
-#  Драйверы (вариант A): официальные CLI для Dell/HP/Lenovo, для розничных
-#  плат — официальная страница вендора в браузере. Без Windows Update.
+#  Драйверы: официальные CLI — Dell (dcu-cli) / HP (HPIA) / Lenovo (Thin
+#  Installer); Intel-платы — Intel DSA; AMD/прочее — страница вендора.
+#  Без Windows Update. Та же логика в пункте [D] «Обновление драйверов».
 # =====================================================================
 function Open-DriverPage {
     param([string]$Maker, [string]$Model)
@@ -397,48 +398,52 @@ function Install-DellDriver {
 }
 
 function Install-HpDriver {
-    Write-Host "   Подготовка HP CMSL (официальный модуль HP)..." -ForegroundColor DarkGray
-    try {
-        if (-not (Get-Module -ListAvailable HPCMSL)) {
-            Install-PackageProvider -Name NuGet -Force -ErrorAction SilentlyContinue | Out-Null
-            Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue
-            Install-Module HPCMSL -Force -AcceptLicense -Scope AllUsers -ErrorAction Stop
-        }
-        Import-Module HPCMSL -ErrorAction Stop
-        Write-Host "   Загрузка и установка драйверов с сайта HP..." -ForegroundColor DarkGray
-        Get-SoftpaqList -Category Driver -ErrorAction Stop | ForEach-Object {
-            $num = [int]($_.id -replace '\D', '')
-            Write-Host "    - $($_.Name)" -ForegroundColor DarkGray
-            Get-Softpaq -Number $num -Action Install -ErrorAction SilentlyContinue | Out-Null
-        }
-    } catch {
-        Write-Host "   HP CMSL недоступен ($($_.Exception.Message))." -ForegroundColor Yellow
-        Write-Host "   Открываю официальную страницу драйверов HP..." -ForegroundColor DarkGray
-        Start-Process 'https://support.hp.com/us-en/drivers'
+    if (-not $HasWinget) { Write-Host "   Нужен winget для HP Image Assistant." -ForegroundColor Yellow; return }
+    Write-Host "   Установка HP Image Assistant (HPIA)..." -ForegroundColor DarkGray
+    winget install --id HP.ImageAssistant -e --source winget --accept-package-agreements --accept-source-agreements
+    $hpia = @("$env:ProgramFiles\HP\HPIA\HPImageAssistant.exe", "${env:ProgramFiles(x86)}\HP\HPIA\HPImageAssistant.exe", "$env:ProgramData\HP\HPIA\HPImageAssistant.exe") |
+        Where-Object { Test-Path $_ } | Select-Object -First 1
+    if (-not $hpia) {
+        $hpia = (Get-ChildItem "$env:ProgramFiles\HP", "${env:ProgramFiles(x86)}\HP" -Recurse -Filter 'HPImageAssistant.exe' -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
     }
+    if (-not $hpia) {
+        Write-Host "   HPImageAssistant.exe не найден — открываю страницу драйверов HP." -ForegroundColor Yellow
+        Start-Process 'https://support.hp.com/us-en/drivers'
+        return
+    }
+    Write-Host "   Анализ и установка драйверов с сайта HP (HPIA)..." -ForegroundColor DarkGray
+    & $hpia /Operation:Analyze /Category:Drivers /Selection:All /Action:Install /Silent /ReportFolder:"$env:TEMP\HPIA"
 }
 
 function Install-LenovoDriver {
-    Write-Host "   Подготовка LSUClient (репозиторий Lenovo)..." -ForegroundColor DarkGray
-    try {
-        if (-not (Get-Module -ListAvailable LSUClient)) {
-            Install-PackageProvider -Name NuGet -Force -ErrorAction SilentlyContinue | Out-Null
-            Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue
-            Install-Module LSUClient -Force -Scope AllUsers -ErrorAction Stop
-        }
-        Import-Module LSUClient -ErrorAction Stop
-        Write-Host "   Поиск драйверов с сайта Lenovo..." -ForegroundColor DarkGray
-        $updates = Get-LSUpdate -ErrorAction Stop
-        if ($updates) { $updates | Install-LSUpdate -ErrorAction SilentlyContinue }
-        else { Write-Host "   Обновлений драйверов не найдено." -ForegroundColor Green }
-    } catch {
-        Write-Host "   LSUClient недоступен ($($_.Exception.Message))." -ForegroundColor Yellow
-        Write-Host "   Открываю официальную страницу драйверов Lenovo..." -ForegroundColor DarkGray
+    if (-not $HasWinget) { Write-Host "   Нужен winget для Lenovo Thin Installer." -ForegroundColor Yellow; return }
+    Write-Host "   Установка Lenovo Thin Installer..." -ForegroundColor DarkGray
+    winget install --id Lenovo.ThinInstaller -e --source winget --accept-package-agreements --accept-source-agreements
+    $ti = @("${env:ProgramFiles(x86)}\Lenovo\ThinInstaller\ThinInstaller.exe", "$env:ProgramFiles\Lenovo\ThinInstaller\ThinInstaller.exe") |
+        Where-Object { Test-Path $_ } | Select-Object -First 1
+    if (-not $ti) {
+        Write-Host "   ThinInstaller.exe не найден — открываю страницу драйверов Lenovo." -ForegroundColor Yellow
         Start-Process 'https://support.lenovo.com/solutions/ht003029'
+        return
     }
+    Write-Host "   Поиск и установка драйверов с сайта Lenovo (Thin Installer)..." -ForegroundColor DarkGray
+    & $ti /CM -search A -action INSTALL -includerebootpackages 1, 3, 4 -noreboot -noicon
 }
 
-function Install-Driver {
+function Install-IntelDriver {
+    if (-not $HasWinget) { Write-Host "   Нужен winget для Intel DSA." -ForegroundColor Yellow; return }
+    Write-Host "   Установка Intel Driver & Support Assistant..." -ForegroundColor DarkGray
+    winget install --id Intel.IntelDriverAndSupportAssistant -e --source winget --accept-package-agreements --accept-source-agreements
+    Write-Host "   У Intel нет тихого CLI — открываю DSA для сканирования и установки..." -ForegroundColor Yellow
+    Start-Process 'https://www.intel.com/content/www/us/en/support/detect.html'
+}
+
+function Invoke-DriverUpdate {
+    Write-Box 'Обновление драйверов' 'Cyan'
+    if (-not (Test-Admin)) {
+        Write-Host "   Установка драйверов требует прав администратора." -ForegroundColor Yellow
+        Write-Host "   Лучше выйти и запустить [A].`n" -ForegroundColor Yellow
+    }
     $bb = Get-CimInstance Win32_BaseBoard -ErrorAction SilentlyContinue
     $cs = Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue
     $vendor = "$($cs.Manufacturer)"
@@ -458,12 +463,19 @@ function Install-Driver {
 
     Write-Host ""
     $v = $vendor.ToLower()
-    if     ($v -match 'dell')       { Install-DellDriver }
-    elseif ($v -match 'hp|hewlett') { Install-HpDriver }
-    elseif ($v -match 'lenovo')     { Install-LenovoDriver }
+    if     ($v -match 'dell')       { Write-Host "   Инструмент: Dell Command | Update`n" -ForegroundColor Cyan; Install-DellDriver }
+    elseif ($v -match 'hp|hewlett') { Write-Host "   Инструмент: HP Image Assistant`n"   -ForegroundColor Cyan; Install-HpDriver }
+    elseif ($v -match 'lenovo')     { Write-Host "   Инструмент: Lenovo Thin Installer`n" -ForegroundColor Cyan; Install-LenovoDriver }
     else {
-        Write-Host "   Бренд не Dell/HP/Lenovo — официального CLI-загрузчика нет." -ForegroundColor Yellow
-        Open-DriverPage $bb.Manufacturer $bb.Product
+        $cpu = "$((Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue | Select-Object -First 1).Manufacturer)"
+        if ($cpu -match 'Intel') {
+            Write-Host "   Инструмент: Intel Driver & Support Assistant`n" -ForegroundColor Cyan
+            Install-IntelDriver
+            Write-Host "   Драйверы чипсета/звука самой платы — на официальной странице вендора." -ForegroundColor DarkGray
+        } else {
+            Write-Host "   Сборка не Dell/HP/Lenovo и не Intel — официального CLI нет." -ForegroundColor Yellow
+            Open-DriverPage $bb.Manufacturer $bb.Product
+        }
     }
 }
 
@@ -500,8 +512,8 @@ function Invoke-NewPC {
     }
 
     # 4/4 — драйверы
-    Write-Host "`n  [4/4] Драйверы (официальный источник, без Windows Update)..." -ForegroundColor Cyan
-    Install-Driver
+    Write-Host "`n  [4/4] Драйверы (официальный CLI вендора, без Windows Update)..." -ForegroundColor Cyan
+    Invoke-DriverUpdate
 
     Write-Host "`n  Перезапуск проводника для применения иконок и виджетов..." -ForegroundColor DarkGray
     Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
@@ -696,6 +708,7 @@ function Show-Menu {
     Write-Host "   [9] " -NoNewline -ForegroundColor Green; Write-Host "Мой скрипт №2 (пример)"
     Write-Host ""
     Write-Host "   [C] " -NoNewline -ForegroundColor Cyan;    Write-Host "Калькуляторы для камер (HDD / интернет)"
+    Write-Host "   [D] " -NoNewline -ForegroundColor Green;   Write-Host "Обновление драйверов (Dell/HP/Lenovo/Intel)"
     Write-Host "   [N] " -NoNewline -ForegroundColor Magenta; Write-Host "Новый ПК — первичная настройка (программы, драйверы, иконки)"
     Write-Host "   [A] " -NoNewline -ForegroundColor Yellow;  Write-Host "Перезапустить от имени администратора"
     Write-Host "   [0] " -NoNewline -ForegroundColor Red;     Write-Host "Выход"
@@ -722,6 +735,7 @@ do {
         '8' { Invoke-Remote 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/scripts/script1.ps1'; Wait-Continue }
         '9' { Invoke-Remote 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/scripts/script2.ps1'; Wait-Continue }
         'C' { Show-CalcMenu }
+        'D' { Invoke-DriverUpdate; Wait-Continue }
         'N' { Invoke-NewPC; Wait-Continue }
         'A' { Invoke-AdminRestart }
         '0' { }
