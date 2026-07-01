@@ -47,7 +47,8 @@ irm https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/menu.ps1 | iex
 - **[C] Калькуляторы для камер** — *HDD → на сколько дней хватит диска*
   (по объёму, числу камер, битрейту, режиму записи) и *Сеть → нужная
   скорость интернета (upload)* для удалённого просмотра. Считается локально.
-- **Мои скрипты:** слоты под личные `.ps1` из папки `scripts/`
+- **[U] Утилиты** — WinUtil (Chris Titus), Win11Debloat (Raphire), SophiApp (GUI),
+  Sophia Script (PowerShell): debloat и твики известными инструментами.
 - Перезапуск от имени администратора, выход
 
 ## Как менять под себя

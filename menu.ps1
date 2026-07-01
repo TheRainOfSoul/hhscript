@@ -685,6 +685,29 @@ function Show-CalcMenu {
 }
 
 # =====================================================================
+#  Утилиты: WinUtil / Win11Debloat / Sophia
+# =====================================================================
+function Show-UtilityMenu {
+    do {
+        Write-Box 'Утилиты: debloat и твики' 'Magenta'
+        Write-Host "   [1] " -NoNewline -ForegroundColor Green; Write-Host "WinUtil (Chris Titus)"
+        Write-Host "   [2] " -NoNewline -ForegroundColor Green; Write-Host "Win11Debloat (Raphire)"
+        Write-Host "   [3] " -NoNewline -ForegroundColor Green; Write-Host "SophiApp (GUI, галочки)"
+        Write-Host "   [4] " -NoNewline -ForegroundColor Green; Write-Host "Sophia Script (PowerShell)"
+        Write-Host "   [0] " -NoNewline -ForegroundColor Red;   Write-Host "Назад"
+        Write-Host ""
+        switch ((Read-Host "  Выбор").Trim()) {
+            '1' { Invoke-Remote 'https://christitus.com/win'; Wait-Continue }
+            '2' { Invoke-Remote 'https://debloat.raphi.re/';  Wait-Continue }
+            '3' { Install-Program @{ Name = 'SophiApp';      Winget = 'TeamSophia.SophiApp';    Url = 'https://github.com/Sophia-Community/SophiApp/releases' }; Wait-Continue }
+            '4' { Install-Program @{ Name = 'Sophia Script'; Winget = 'TeamSophia.SophiaScript'; Url = 'https://github.com/farag2/Sophia-Script-for-Windows/releases' }; Wait-Continue }
+            '0' { return }
+            default { Write-Host "`n  Неверный выбор." -ForegroundColor Yellow; Start-Sleep 1 }
+        }
+    } while ($true)
+}
+
+# =====================================================================
 #  Главное меню
 # =====================================================================
 function Show-Menu {
@@ -707,13 +730,10 @@ function Show-Menu {
     Write-Host "   [6] " -NoNewline -ForegroundColor Green; Write-Host "Установить программы (галочками)"
     Write-Host "   [7] " -NoNewline -ForegroundColor Green; Write-Host "Обновить весь софт (winget upgrade)"
     Write-Host ""
-    Write-Host "  --- Мои скрипты ---" -ForegroundColor DarkCyan
-    Write-Host "   [8] " -NoNewline -ForegroundColor Green; Write-Host "Мой скрипт №1 (пример)"
-    Write-Host "   [9] " -NoNewline -ForegroundColor Green; Write-Host "Мой скрипт №2 (пример)"
-    Write-Host ""
     Write-Host "   [C] " -NoNewline -ForegroundColor Cyan;    Write-Host "Калькуляторы для камер (HDD / интернет)"
     Write-Host "   [D] " -NoNewline -ForegroundColor Green;   Write-Host "Обновление драйверов (Dell/HP/Lenovo/Intel)"
     Write-Host "   [T] " -NoNewline -ForegroundColor Green;   Write-Host "Стресс-тест ПК (CPU-прожиг + OCCT/FurMark/диск)"
+    Write-Host "   [U] " -NoNewline -ForegroundColor Cyan;    Write-Host "Утилиты: WinUtil / Win11Debloat / Sophia"
     Write-Host "   [N] " -NoNewline -ForegroundColor Magenta; Write-Host "Новый ПК — первичная настройка (программы, драйверы, иконки)"
     Write-Host "   [A] " -NoNewline -ForegroundColor Yellow;  Write-Host "Перезапустить от имени администратора"
     Write-Host "   [0] " -NoNewline -ForegroundColor Red;     Write-Host "Выход"
@@ -737,11 +757,10 @@ do {
             } else { Write-Host "`n   winget не найден." -ForegroundColor Yellow }
             Wait-Continue
         }
-        '8' { Invoke-Remote 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/scripts/script1.ps1'; Wait-Continue }
-        '9' { Invoke-Remote 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/scripts/script2.ps1'; Wait-Continue }
         'C' { Show-CalcMenu }
         'D' { Invoke-DriverUpdate; Wait-Continue }
         'T' { Invoke-Remote 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/scripts/stresstest.ps1'; Wait-Continue }
+        'U' { Show-UtilityMenu }
         'N' { Invoke-NewPC; Wait-Continue }
         'A' { Invoke-AdminRestart }
         '0' { }
