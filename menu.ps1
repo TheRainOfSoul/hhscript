@@ -708,6 +708,26 @@ function Show-UtilityMenu {
 }
 
 # =====================================================================
+#  Проверка и восстановление системных файлов (DISM + SFC)
+# =====================================================================
+function Repair-System {
+    Write-Box 'Проверка и восстановление системы' 'Yellow'
+    if (-not (Test-Admin)) {
+        Write-Host "   Требуются права администратора — выйди и запусти [A]." -ForegroundColor Yellow
+        return
+    }
+    Write-Host "   Будут запущены DISM /RestoreHealth и sfc /scannow." -ForegroundColor Gray
+    Write-Host "   Может занять 10-30 минут, нужен интернет. Не закрывай окно.`n" -ForegroundColor Gray
+    if ((Read-Host "   Начать? (y/n)").Trim().ToLower() -ne 'y') { return }
+
+    Write-Host "`n   [1/2] DISM /Online /Cleanup-Image /RestoreHealth ..." -ForegroundColor Cyan
+    DISM /Online /Cleanup-Image /RestoreHealth
+    Write-Host "`n   [2/2] sfc /scannow ..." -ForegroundColor Cyan
+    sfc /scannow
+    Write-Host "`n   Готово. Если остались ошибки — перезагрузи ПК и запусти повторно." -ForegroundColor Green
+}
+
+# =====================================================================
 #  Главное меню
 # =====================================================================
 function Show-Menu {
@@ -732,6 +752,7 @@ function Show-Menu {
     Write-Host ""
     Write-Host "   [C] " -NoNewline -ForegroundColor Cyan;    Write-Host "Калькуляторы для камер (HDD / интернет)"
     Write-Host "   [D] " -NoNewline -ForegroundColor Green;   Write-Host "Обновление драйверов (Dell/HP/Lenovo/Intel)"
+    Write-Host "   [R] " -NoNewline -ForegroundColor Green;   Write-Host "Проверка/восстановление системы (DISM + SFC)"
     Write-Host "   [T] " -NoNewline -ForegroundColor Green;   Write-Host "Стресс-тест ПК (CPU-прожиг + OCCT/FurMark/диск)"
     Write-Host "   [U] " -NoNewline -ForegroundColor Cyan;    Write-Host "Утилиты: WinUtil / Win11Debloat / Sophia"
     Write-Host "   [N] " -NoNewline -ForegroundColor Magenta; Write-Host "Новый ПК — первичная настройка (программы, драйверы, иконки)"
@@ -759,6 +780,7 @@ do {
         }
         'C' { Show-CalcMenu }
         'D' { Invoke-DriverUpdate; Wait-Continue }
+        'R' { Repair-System; Wait-Continue }
         'T' { Invoke-Remote 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/scripts/stresstest.ps1'; Wait-Continue }
         'U' { Show-UtilityMenu }
         'N' { Invoke-NewPC; Wait-Continue }

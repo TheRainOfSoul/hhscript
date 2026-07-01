@@ -37,6 +37,8 @@ irm https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/menu.ps1 | iex
   (dcu-cli), HP → HP Image Assistant (HPIA), Lenovo → Thin Installer,
   Intel-платы → Intel DSA, AMD/прочее → официальная страница вендора.
   Требует прав администратора ([A]).
+- **[R] Проверка/восстановление системы** — `DISM /RestoreHealth` + `sfc /scannow`
+  (починка системных файлов). Требует прав администратора ([A]).
 - **[T] Стресс-тест ПК** — отдельный скрипт `scripts/stresstest.ps1`: встроенный
   CPU-прожиг (100% всех ядер на N минут, чистый PowerShell) + запуск OCCT /
   FurMark / CrystalDiskMark / HWiNFO. Запускается и сам по себе через `irm`.
