@@ -32,19 +32,23 @@ irm https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/menu.ps1 | iex
   CrystalDiskInfo, HWiNFO, OCCT, FurMark, CrystalDiskMark, VC++ Redist
   (через `winget`) + Dahua ConfigTool и SmartPSS Lite (открываются
   официальной страницей загрузки). Отдельный пункт **«Обновить весь софт»** (`winget upgrade --all`)
-- **[11] Обновление драйверов** — определяет производителя и ставит драйверы из
+- **[8] Программы для админа / Help Desk** — отдельный чек-лист бесплатных
+  инструментов (CLI+GUI): Sysinternals Suite, mRemoteNG, PuTTY, WinSCP, MobaXterm,
+  TightVNC, Nmap, Wireshark, Angry IP Scanner, Everything, WizTree, Rufus, Ventoy,
+  Malwarebytes, KeePassXC, PowerShell 7, Windows Terminal, Notepad++ (через `winget`).
+- **[12] Обновление драйверов** — определяет производителя и ставит драйверы из
   **официального источника** (без Windows Update): Dell → Dell Command Update
   (dcu-cli), HP → HP Image Assistant (HPIA), Lenovo → Thin Installer,
   Intel-платы → Intel DSA, AMD/прочее → официальная страница вендора.
   Требует прав администратора ([A]).
-- **[10] Проверка/восстановление системы** — `DISM /RestoreHealth` + `sfc /scannow`
+- **[11] Проверка/восстановление системы** — `DISM /RestoreHealth` + `sfc /scannow`
   (починка системных файлов). Требует прав администратора ([A]).
 - **[4] Стресс-тест ПК** — отдельный скрипт `scripts/stresstest.ps1`: встроенный
   CPU-прожиг (100% всех ядер на N минут, чистый PowerShell) + запуск OCCT /
   FurMark / CrystalDiskMark / HWiNFO. Запускается и сам по себе через `irm`.
-- **[13] Новый ПК** — первичная настройка чистой машины одной кнопкой: ставит
+- **[14] Новый ПК** — первичная настройка чистой машины одной кнопкой: ставит
   Chrome / 7-Zip / AnyDesk, выносит иконку «Этот компьютер» на рабочий стол,
-  отключает виджеты и обновляет драйверы (та же логика, что **[11]**).
+  отключает виджеты и обновляет драйверы (та же логика, что **[12]**).
   **Без Windows Update.** Требует прав администратора ([A]).
 - **[3] Калькуляторы для камер** — *HDD → на сколько дней хватит диска*
   (по объёму, числу камер, битрейту, режиму записи) и *Сеть → нужная
