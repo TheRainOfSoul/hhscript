@@ -739,25 +739,29 @@ function Show-Menu {
     Write-Host "  ╚════════════════════════════════════════════╝" -ForegroundColor Cyan
     Write-Host "   Режим: $mode`n" -ForegroundColor DarkGray
 
-    Write-Host "  --- Система ---" -ForegroundColor DarkCyan
-    Write-Host "   [1] " -NoNewline -ForegroundColor Green; Write-Host "Информация о ПК"
-    Write-Host "   [2] " -NoNewline -ForegroundColor Green; Write-Host "MAS — активация Windows / Office"
-    Write-Host "   [3] " -NoNewline -ForegroundColor Green; Write-Host "Лёгкая чистка (удалить лишнее + TEMP + DNS)"
-    Write-Host "   [4] " -NoNewline -ForegroundColor Green; Write-Host "Базовые твики (расширения, тёмная тема, меню)"
-    Write-Host "   [5] " -NoNewline -ForegroundColor Green; Write-Host "Сетевые утилиты (DNS, ping, сброс сети)"
+    Write-Host "  ━━ Диагностика и сеть ━━" -ForegroundColor DarkCyan
+    Write-Host "   [1]  " -NoNewline -ForegroundColor Green; Write-Host "Информация о ПК"
+    Write-Host "   [2]  " -NoNewline -ForegroundColor Green; Write-Host "Сетевые утилиты (DNS, ping, сброс сети)"
+    Write-Host "   [3]  " -NoNewline -ForegroundColor Green; Write-Host "Калькуляторы для камер (HDD / интернет)"
+    Write-Host "   [4]  " -NoNewline -ForegroundColor Green; Write-Host "Стресс-тест ПК (CPU-прожиг + OCCT/FurMark/диск)"
     Write-Host ""
-    Write-Host "  --- Программы ---" -ForegroundColor DarkCyan
-    Write-Host "   [6] " -NoNewline -ForegroundColor Green; Write-Host "Установить программы (галочками)"
-    Write-Host "   [7] " -NoNewline -ForegroundColor Green; Write-Host "Обновить весь софт (winget upgrade)"
+    Write-Host "  ━━ Программы ━━" -ForegroundColor DarkCyan
+    Write-Host "   [5]  " -NoNewline -ForegroundColor Green; Write-Host "Установить программы (галочками)"
+    Write-Host "   [6]  " -NoNewline -ForegroundColor Green; Write-Host "Обновить весь софт (winget upgrade)"
+    Write-Host "   [7]  " -NoNewline -ForegroundColor Green; Write-Host "Утилиты: WinUtil / Win11Debloat / Sophia"
     Write-Host ""
-    Write-Host "   [C] " -NoNewline -ForegroundColor Cyan;    Write-Host "Калькуляторы для камер (HDD / интернет)"
-    Write-Host "   [D] " -NoNewline -ForegroundColor Green;   Write-Host "Обновление драйверов (Dell/HP/Lenovo/Intel)"
-    Write-Host "   [R] " -NoNewline -ForegroundColor Green;   Write-Host "Проверка/восстановление системы (DISM + SFC)"
-    Write-Host "   [T] " -NoNewline -ForegroundColor Green;   Write-Host "Стресс-тест ПК (CPU-прожиг + OCCT/FurMark/диск)"
-    Write-Host "   [U] " -NoNewline -ForegroundColor Cyan;    Write-Host "Утилиты: WinUtil / Win11Debloat / Sophia"
-    Write-Host "   [N] " -NoNewline -ForegroundColor Magenta; Write-Host "Новый ПК — первичная настройка (программы, драйверы, иконки)"
-    Write-Host "   [A] " -NoNewline -ForegroundColor Yellow;  Write-Host "Перезапустить от имени администратора"
-    Write-Host "   [0] " -NoNewline -ForegroundColor Red;     Write-Host "Выход"
+    Write-Host "  ━━ Обслуживание Windows ━━" -ForegroundColor DarkCyan
+    Write-Host "   [8]  " -NoNewline -ForegroundColor Green; Write-Host "Лёгкая чистка (лишнее + TEMP + DNS)"
+    Write-Host "   [9]  " -NoNewline -ForegroundColor Green; Write-Host "Базовые твики (расширения, тёмная тема, меню)"
+    Write-Host "   [10] " -NoNewline -ForegroundColor Green; Write-Host "Проверка/восстановление системы (DISM + SFC)"
+    Write-Host "   [11] " -NoNewline -ForegroundColor Green; Write-Host "Обновление драйверов (Dell/HP/Lenovo/Intel)"
+    Write-Host ""
+    Write-Host "  ━━ Установка и активация ━━" -ForegroundColor DarkCyan
+    Write-Host "   [12] " -NoNewline -ForegroundColor Green;   Write-Host "MAS — активация Windows / Office"
+    Write-Host "   [13] " -NoNewline -ForegroundColor Magenta; Write-Host "Новый ПК — первичная настройка"
+    Write-Host ""
+    Write-Host "   [A]  " -NoNewline -ForegroundColor Yellow;  Write-Host "Перезапустить от имени администратора"
+    Write-Host "   [0]  " -NoNewline -ForegroundColor Red;     Write-Host "Выход"
     Write-Host ""
 }
 
@@ -765,27 +769,27 @@ do {
     Show-Menu
     $choice = (Read-Host "  Выбор").Trim().ToUpper()
     switch ($choice) {
-        '1' { Show-PCInfo;        Wait-Continue }
-        '2' { Invoke-Remote 'https://get.activated.win'; Wait-Continue }    # MAS
-        '3' { Invoke-LightClean;  Wait-Continue }
-        '4' { Invoke-LightTweak;  Wait-Continue }
-        '5' { Show-NetworkMenu }
-        '6' { Show-ProgramMenu }
-        '7' {
+        '1'  { Show-PCInfo;         Wait-Continue }
+        '2'  { Show-NetworkMenu }
+        '3'  { Show-CalcMenu }
+        '4'  { Invoke-Remote 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/scripts/stresstest.ps1'; Wait-Continue }
+        '5'  { Show-ProgramMenu }
+        '6'  {
             if ($HasWinget) {
                 Write-Host "`n   Обновление всего установленного софта..." -ForegroundColor Green
                 winget upgrade --all --include-unknown --accept-package-agreements --accept-source-agreements
             } else { Write-Host "`n   winget не найден." -ForegroundColor Yellow }
             Wait-Continue
         }
-        'C' { Show-CalcMenu }
-        'D' { Invoke-DriverUpdate; Wait-Continue }
-        'R' { Repair-System; Wait-Continue }
-        'T' { Invoke-Remote 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/scripts/stresstest.ps1'; Wait-Continue }
-        'U' { Show-UtilityMenu }
-        'N' { Invoke-NewPC; Wait-Continue }
-        'A' { Invoke-AdminRestart }
-        '0' { }
+        '7'  { Show-UtilityMenu }
+        '8'  { Invoke-LightClean;   Wait-Continue }
+        '9'  { Invoke-LightTweak;   Wait-Continue }
+        '10' { Repair-System;       Wait-Continue }
+        '11' { Invoke-DriverUpdate; Wait-Continue }
+        '12' { Invoke-Remote 'https://get.activated.win'; Wait-Continue }   # MAS
+        '13' { Invoke-NewPC;        Wait-Continue }
+        'A'  { Invoke-AdminRestart }
+        '0'  { }
         default { Write-Host "`n  Неверный выбор." -ForegroundColor Yellow; Start-Sleep 1 }
     }
 } while ($choice -ne '0')
