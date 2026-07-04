@@ -659,7 +659,7 @@ function Read-Bitrate {
         '5'     { $b = Read-Number 'Битрейт, Mbps' 4 }
         default { $b = 4 }
     }
-    if ((Read-Host "   Кодек: [1] H.265 (по умолч.)  [2] H.264 (битрейт x2)").Trim() -eq '2') { $b = $b * 2 }
+    if ((Read-Host "   Кодек: [1] H.265 (по умолч.)  [2] H.264 (битрейт x1.8)").Trim() -eq '2') { $b = $b * 1.8 }
     return $b
 }
 
@@ -674,31 +674,40 @@ function Show-RetentionCalc {
         $factor = (Read-Number 'Активность, % (доля времени с движением)' 30) / 100.0
     }
 
-    $gbPerDay = $cams * $mbps * 0.45 * $hours * $factor
-    if ($gbPerDay -le 0) { Write-Host "`n   Некорректные данные." -ForegroundColor Red; return }
-    $days = ($tb * 1000 * 0.93) / $gbPerDay
+    $gbCam = $mbps * 0.45 * $hours * $factor   # ГБ/сутки на 1 камеру
+    $gbAll = $gbCam * $cams                     # ГБ/сутки суммарно
+    if ($gbAll -le 0) { Write-Host "`n   Некорректные данные." -ForegroundColor Red; return }
+    $usable = $tb * 1000 * 0.90                 # полезный объём (ГБ), ~10% резерв
+    $days   = $usable / $gbAll
+    $tb30   = ($gbAll * 30) / (1000 * 0.90)     # обратно: сколько ТБ на 30 дней
 
     Write-Host ""
-    Write-Kv 'Расход:'    ("{0:N1} ГБ/сутки (все камеры)" -f $gbPerDay)
-    Write-Kv 'Хватит на:' ("{0:N1} дней  (~{1:N1} мес.)" -f $days, ($days / 30))
-    Write-Host "`n   Учтён запас ~7% (форматирование/резерв NVR). Реальные цифры" -ForegroundColor DarkGray
-    Write-Host "   зависят от сцены и кодека." -ForegroundColor DarkGray
+    Write-Kv 'Расход/камера:' ("{0:N1} ГБ/сутки" -f $gbCam)
+    Write-Kv 'Расход всего:'  ("{0:N1} ГБ/сутки ({1:N0} камер)" -f $gbAll, $cams)
+    Write-Kv 'Хватит на:'     ("{0:N1} дней  (~{1:N1} мес.)" -f $days, ($days / 30))
+    Write-Kv 'Справочно:'     ("для 30 дней нужно ~{0:N1} ТБ" -f $tb30)
+    Write-Host "`n   Учтён запас ~10% (файловая система + буфер NVR). Реальные" -ForegroundColor DarkGray
+    Write-Host "   цифры зависят от сцены и кодека." -ForegroundColor DarkGray
 }
 
 function Show-InternetCalc {
     Write-Box 'Сеть -> нужный интернет (upload)' 'Cyan'
     $cams = Read-Number 'Кол-во камер' 4
-    Write-Host "   Поток для удалённого просмотра:" -ForegroundColor Gray
-    Write-Host "    [1] дополнительный / substream (~1 Mbps, телефон) [по умолч.]"
-    Write-Host "    [2] основной / mainstream (по пресетам)"
-    if ((Read-Host "   Выбор [1]").Trim() -eq '2') { $mbps = Read-Bitrate }
-    else { $mbps = Read-Number 'Битрейт substream, Mbps' 1 }
-    $viewed  = Read-Number 'Камер смотрят одновременно' $cams
+    Write-Host "   Сценарий удалённого просмотра:" -ForegroundColor Gray
+    Write-Host "    [1] Сетка всех камер (substream) — типичный просмотр с телефона [по умолч.]"
+    Write-Host "    [2] Одна камера крупно (mainstream)"
+    Write-Host "    [3] Худший случай — все камеры в mainstream"
+    switch ((Read-Host "   Выбор [1]").Trim()) {
+        '2'     { $main = Read-Bitrate; $streams = $main;         $desc = 'одна камера (mainstream)' }
+        '3'     { $main = Read-Bitrate; $streams = $cams * $main; $desc = ("{0:N0} камер (mainstream)" -f $cams) }
+        default { $sub = Read-Number 'Битрейт substream, Mbps' 1; $streams = $cams * $sub; $desc = ("{0:N0} камер (substream)" -f $cams) }
+    }
     $viewers = Read-Number 'Зрителей одновременно' 1
 
-    $upload = $viewed * $mbps * $viewers * 1.2
+    $upload = $streams * $viewers * 1.2
     $plan   = [math]::Ceiling($upload / 5) * 5
     Write-Host ""
+    Write-Kv 'Сценарий:'     $desc
     Write-Kv 'Нужно upload:' ("{0:N1} Mbps (исходящая на объекте)" -f $upload)
     Write-Kv 'Тариф:'        ("от ~{0:N0} Mbps upload (с запасом)" -f $plan)
     Write-Host "`n   Важно: удалённый просмотр ограничивает ОТДАЧА (upload) на" -ForegroundColor DarkGray
