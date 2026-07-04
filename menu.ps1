@@ -645,89 +645,65 @@ function Read-Number {
     return $Default
 }
 
-function Read-Bitrate {
-    Write-Host "   Битрейт на камеру:" -ForegroundColor Gray
-    Write-Host "    [1] 2 МП / 1080p  (~4 Mbps)   [по умолч.]"
-    Write-Host "    [2] 4 МП          (~6 Mbps)"
-    Write-Host "    [3] 5 МП          (~8 Mbps)"
-    Write-Host "    [4] 8 МП / 4K     (~12 Mbps)"
-    Write-Host "    [5] ввести вручную"
-    switch ((Read-Host "   Выбор [1]").Trim()) {
-        '2'     { $b = 6 }
-        '3'     { $b = 8 }
-        '4'     { $b = 12 }
-        '5'     { $b = Read-Number 'Битрейт, Mbps' 4 }
-        default { $b = 4 }
+function Read-CamBitrate {
+    # Возвращает битрейт в Kbps (как поле Bit Rate у Dahua).
+    Write-Host "   Битрейт: [1] по разрешению+кодеку   [2] ввести вручную (Kbps)" -ForegroundColor Gray
+    if ((Read-Host "   Выбор [1]").Trim() -eq '2') { return Read-Number 'Битрейт, Kbps' 4096 }
+
+    Write-Host "   Разрешение:" -ForegroundColor Gray
+    Write-Host "    [1] 2 МП / 1080p   [2] 4 МП   [3] 5 МП   [4] 6 МП   [5] 8 МП / 4K"
+    switch ((Read-Host "   Выбор [1]").Trim()) {   # база — H.264, Kbps
+        '2'     { $h264 = 6144 }
+        '3'     { $h264 = 8192 }
+        '4'     { $h264 = 10240 }
+        '5'     { $h264 = 12288 }
+        default { $h264 = 4096 }
     }
-    if ((Read-Host "   Кодек: [1] H.265 (по умолч.)  [2] H.264 (битрейт x1.8)").Trim() -eq '2') { $b = $b * 1.8 }
-    return $b
+    Write-Host "   Кодек: [1] H.264   [2] H.265 (x0.5)   [3] H.265+ (x0.25)" -ForegroundColor Gray
+    switch ((Read-Host "   Выбор [1]").Trim()) {
+        '2'     { return [math]::Round($h264 / 2) }
+        '3'     { return [math]::Round($h264 / 4) }
+        default { return $h264 }
+    }
 }
 
-function Show-RetentionCalc {
-    Write-Box 'HDD -> на сколько дней хватит' 'Cyan'
-    $tb    = Read-Number 'Объём диска, ТБ' 4
-    $cams  = Read-Number 'Кол-во камер' 4
-    $mbps  = Read-Bitrate
+function Show-StorageCalc {
+    Write-Box 'Калькулятор диска (модель Dahua)' 'Cyan'
+    $cams  = Read-Number 'Кол-во камер (каналов)' 1
+    $kbps  = Read-CamBitrate
     $hours = Read-Number 'Часов записи в сутки (24 = круглосуточно)' 24
     $factor = 1.0
-    if ((Read-Host "   Режим: [1] постоянно (по умолч.)  [2] по движению").Trim() -eq '2') {
-        $factor = (Read-Number 'Активность, % (доля времени с движением)' 30) / 100.0
+    if ((Read-Host "   Запись: [1] постоянно (по умолч.)  [2] по движению").Trim() -eq '2') {
+        $factor = (Read-Number 'Активность, %' 30) / 100.0
     }
 
-    $gbCam = $mbps * 0.45 * $hours * $factor   # ГБ/сутки на 1 камеру
-    $gbAll = $gbCam * $cams                     # ГБ/сутки суммарно
-    if ($gbAll -le 0) { Write-Host "`n   Некорректные данные." -ForegroundColor Red; return }
-    $usable = $tb * 1000 * 0.90                 # полезный объём (ГБ), ~10% резерв
-    $days   = $usable / $gbAll
-    $tb30   = ($gbAll * 30) / (1000 * 0.90)     # обратно: сколько ТБ на 30 дней
+    $mbps     = $kbps / 1000.0
+    $K        = 0.476875                            # ГБ на (Mbps*ч) — как у Dahua (~10% запас + бинарный ГБ)
+    $gbCamDay = $mbps * $K * $hours * $factor         # ГБ/сутки на камеру
+    $gbAllDay = $gbCamDay * $cams                      # ГБ/сутки всего
+    $bwMbps   = $mbps * $cams                           # суммарный битрейт (Bandwidth)
+    if ($gbAllDay -le 0) { Write-Host "`n   Некорректные данные." -ForegroundColor Red; return }
+
+    Write-Host "`n   Что посчитать:" -ForegroundColor Gray
+    Write-Host "    [1] Сколько диска нужно на N дней   [по умолч.]"
+    Write-Host "    [2] На сколько дней хватит диска"
+    $mode = (Read-Host "   Выбор [1]").Trim()
+    if ($mode -eq '2') { $tb = Read-Number 'Объём диска, ТБ' 4 }
+    else               { $days = Read-Number 'Срок хранения, дней' 30 }
 
     Write-Host ""
-    Write-Kv 'Расход/камера:' ("{0:N1} ГБ/сутки" -f $gbCam)
-    Write-Kv 'Расход всего:'  ("{0:N1} ГБ/сутки ({1:N0} камер)" -f $gbAll, $cams)
-    Write-Kv 'Хватит на:'     ("{0:N1} дней  (~{1:N1} мес.)" -f $days, ($days / 30))
-    Write-Kv 'Справочно:'     ("для 30 дней нужно ~{0:N1} ТБ" -f $tb30)
-    Write-Host "`n   Учтён запас ~10% (файловая система + буфер NVR). Реальные" -ForegroundColor DarkGray
-    Write-Host "   цифры зависят от сцены и кодека." -ForegroundColor DarkGray
-}
-
-function Show-InternetCalc {
-    Write-Box 'Сеть -> нужный интернет (upload)' 'Cyan'
-    $cams = Read-Number 'Кол-во камер' 4
-    Write-Host "   Сценарий удалённого просмотра:" -ForegroundColor Gray
-    Write-Host "    [1] Сетка всех камер (substream) — типичный просмотр с телефона [по умолч.]"
-    Write-Host "    [2] Одна камера крупно (mainstream)"
-    Write-Host "    [3] Худший случай — все камеры в mainstream"
-    switch ((Read-Host "   Выбор [1]").Trim()) {
-        '2'     { $main = Read-Bitrate; $streams = $main;         $desc = 'одна камера (mainstream)' }
-        '3'     { $main = Read-Bitrate; $streams = $cams * $main; $desc = ("{0:N0} камер (mainstream)" -f $cams) }
-        default { $sub = Read-Number 'Битрейт substream, Mbps' 1; $streams = $cams * $sub; $desc = ("{0:N0} камер (substream)" -f $cams) }
+    Write-Kv 'Битрейт/камера:' ("{0:N0} Kbps ({1:N2} Mbps)" -f $kbps, $mbps)
+    Write-Kv 'Bandwidth:'      ("{0:N1} Mbps (всего по {1:N0} камерам)" -f $bwMbps, $cams)
+    Write-Kv 'Расход:'         ("{0:N1} ГБ/сутки/камера, {1:N1} ГБ/сутки всего" -f $gbCamDay, $gbAllDay)
+    if ($mode -eq '2') {
+        $d = [math]::Floor(($tb * 1024) / $gbAllDay)
+        Write-Kv 'Хватит на:'   ("{0:N0} дней  (~{1:N1} мес.)" -f $d, ($d / 30))
+    } else {
+        $gb = $gbAllDay * $days
+        Write-Kv 'Нужно диска:' ("{0:N1} ГБ  (~{1:N2} ТБ)" -f $gb, ($gb / 1024))
     }
-    $viewers = Read-Number 'Зрителей одновременно' 1
-
-    $upload = $streams * $viewers * 1.2
-    $plan   = [math]::Ceiling($upload / 5) * 5
-    Write-Host ""
-    Write-Kv 'Сценарий:'     $desc
-    Write-Kv 'Нужно upload:' ("{0:N1} Mbps (исходящая на объекте)" -f $upload)
-    Write-Kv 'Тариф:'        ("от ~{0:N0} Mbps upload (с запасом)" -f $plan)
-    Write-Host "`n   Важно: удалённый просмотр ограничивает ОТДАЧА (upload) на" -ForegroundColor DarkGray
-    Write-Host "   стороне камер/регистратора, а не download. Тариф выбирай по upload." -ForegroundColor DarkGray
-}
-
-function Show-CalcMenu {
-    do {
-        Write-Box 'Калькуляторы для камер' 'Cyan'
-        Write-Host "   [1] " -NoNewline -ForegroundColor Green; Write-Host "HDD -> на сколько дней хватит диска"
-        Write-Host "   [2] " -NoNewline -ForegroundColor Green; Write-Host "Сеть -> какой интернет (upload) нужен"
-        Write-Host "   [0] " -NoNewline -ForegroundColor Red;   Write-Host "Назад"
-        Write-Host ""
-        switch ((Read-Host "  Выбор").Trim()) {
-            '1' { Show-RetentionCalc; Wait-Continue }
-            '2' { Show-InternetCalc;  Wait-Continue }
-            '0' { return }
-            default { Write-Host "`n  Неверный выбор." -ForegroundColor Yellow; Start-Sleep 1 }
-        }
-    } while ($true)
+    Write-Host "`n   Коэффициент и запас как в калькуляторе Dahua (~10% + бинарный ТБ)." -ForegroundColor DarkGray
+    Write-Host "   Реальные цифры зависят от сцены и кодека." -ForegroundColor DarkGray
 }
 
 # =====================================================================
@@ -788,7 +764,7 @@ function Show-Menu {
     Write-Host "  ━━ Диагностика и сеть ━━" -ForegroundColor DarkCyan
     Write-Host "   [1]  " -NoNewline -ForegroundColor Green; Write-Host "Информация о ПК"
     Write-Host "   [2]  " -NoNewline -ForegroundColor Green; Write-Host "Сетевые утилиты (DNS, ping, сброс сети)"
-    Write-Host "   [3]  " -NoNewline -ForegroundColor Green; Write-Host "Калькуляторы для камер (HDD / интернет)"
+    Write-Host "   [3]  " -NoNewline -ForegroundColor Green; Write-Host "Калькулятор диска для камер (модель Dahua)"
     Write-Host "   [4]  " -NoNewline -ForegroundColor Green; Write-Host "Стресс-тест ПК (CPU-прожиг + OCCT/FurMark/диск)"
     Write-Host ""
     Write-Host "  ━━ Программы ━━" -ForegroundColor DarkCyan
@@ -818,7 +794,7 @@ do {
     switch ($choice) {
         '1'  { Show-PCInfo;         Wait-Continue }
         '2'  { Show-NetworkMenu }
-        '3'  { Show-CalcMenu }
+        '3'  { Show-StorageCalc; Wait-Continue }
         '4'  { Invoke-Remote 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/scripts/stresstest.ps1'; Wait-Continue }
         '5'  { Show-ProgramMenu }
         '6'  {
