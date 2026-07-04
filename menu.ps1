@@ -757,7 +757,7 @@ function Show-Menu {
     $mode = if (Test-Admin) { 'АДМИН' } else { 'обычный пользователь' }
     Write-Host ""
     Write-Host "  ╔════════════════════════════════════════════╗" -ForegroundColor Cyan
-    Write-Host "  ║              HH Script Toolbox             ║" -ForegroundColor Cyan
+    Write-Host "  ║                  HH Toolbox                ║" -ForegroundColor Cyan
     Write-Host "  ╚════════════════════════════════════════════╝" -ForegroundColor Cyan
     Write-Host "   Режим: $mode`n" -ForegroundColor DarkGray
 
