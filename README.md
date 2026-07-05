@@ -29,26 +29,30 @@ irm https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/menu.ps1 | iex
   Enter — применить, Esc — отмена; резервный режим — ввод номеров)
 - **Программы:** подменю установки **галочками** — Chrome, 7-Zip, VLC,
   qBittorrent, AnyDesk, Advanced IP Scanner, Winbox (MikroTik), Speedtest CLI,
-  CrystalDiskInfo, HWiNFO, OCCT, FurMark, CrystalDiskMark, VC++ Redist
+  CrystalDiskInfo, HWiNFO, OCCT, FurMark, CrystalDiskMark
   (через `winget`) + Dahua ConfigTool и SmartPSS Lite (открываются
   официальной страницей загрузки). Отдельный пункт **«Обновить весь софт»** (`winget upgrade --all`)
 - **[8] Программы для админа / Help Desk** — отдельный чек-лист бесплатных
   инструментов (CLI+GUI): Sysinternals Suite, mRemoteNG, PuTTY, WinSCP, MobaXterm,
   TightVNC, Nmap, Wireshark, Angry IP Scanner, Everything, WizTree, Rufus, Ventoy,
   Malwarebytes, KeePassXC, PowerShell 7, Windows Terminal, Notepad++ (через `winget`).
-- **[12] Обновление драйверов** — определяет производителя и ставит драйверы из
+- **[9] Библиотеки и среды выполнения** — чек-лист runtime (по умолчанию всё
+  отмечено): Visual C++ Redist (все 2005-2022, x86+x64), .NET Desktop Runtime 8/6,
+  .NET Framework 3.5 (DISM), DirectX, Edge WebView2, Windows App Runtime,
+  Java Temurin JRE 8/17. Требует прав администратора ([A]).
+- **[13] Обновление драйверов** — определяет производителя и ставит драйверы из
   **официального источника** (без Windows Update): Dell → Dell Command Update
   (dcu-cli), HP → HP Image Assistant (HPIA), Lenovo → Thin Installer,
   Intel-платы → Intel DSA, AMD/прочее → официальная страница вендора.
   Требует прав администратора ([A]).
-- **[11] Проверка/восстановление системы** — `DISM /RestoreHealth` + `sfc /scannow`
+- **[12] Проверка/восстановление системы** — `DISM /RestoreHealth` + `sfc /scannow`
   (починка системных файлов). Требует прав администратора ([A]).
 - **[4] Стресс-тест ПК** — отдельный скрипт `scripts/stresstest.ps1`: встроенный
   CPU-прожиг (100% всех ядер на N минут, чистый PowerShell) + запуск OCCT /
   FurMark / CrystalDiskMark / HWiNFO. Запускается и сам по себе через `irm`.
-- **[14] Новый ПК** — первичная настройка чистой машины одной кнопкой: ставит
+- **[15] Новый ПК** — первичная настройка чистой машины одной кнопкой: ставит
   Chrome / 7-Zip / AnyDesk, выносит иконку «Этот компьютер» на рабочий стол,
-  отключает виджеты и обновляет драйверы (та же логика, что **[12]**).
+  отключает виджеты и обновляет драйверы (та же логика, что **[13]**).
   **Без Windows Update.** Требует прав администратора ([A]).
 - **[3] Калькулятор диска для камер (модель Dahua)** — считает как официальный
   калькулятор Dahua, в обе стороны: *сколько диска нужно на N дней* ↔ *на сколько

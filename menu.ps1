@@ -32,7 +32,6 @@ $Programs = @(
     @{ Name = 'OCCT (стресс-тест)';   Winget = 'OCBase.OCCT.Personal';           Url = 'https://www.ocbase.com/' }
     @{ Name = 'FurMark (стресс GPU)'; Winget = 'Geeks3D.FurMark.2';              Url = 'https://geeks3d.com/furmark/' }
     @{ Name = 'CrystalDiskMark';      Winget = 'CrystalDewWorld.CrystalDiskMark'; Url = 'https://crystalmark.info/en/software/crystaldiskmark/' }
-    @{ Name = 'VC++ Redist 2015-2022 (x64)'; Winget = 'Microsoft.VCRedist.2015+.x64'; Url = 'https://aka.ms/vs/17/release/vc_redist.x64.exe' }
     # --- Dahua: пакетов winget нет, открывается официальная страница загрузки в браузере.
     #     Если ссылка устареет — обнови URL со страницы support.dahuasecurity.com -> Tools.
     @{ Name = 'Dahua ConfigTool';     Winget = '';  Url = 'https://support.dahuasecurity.com/en/toolsDownloadDetails?IsDpValue=Q93jdSLr94chjRuQ1y%2FcQQ%3D%3D' }
@@ -61,6 +60,28 @@ $AdminPrograms = @(
     @{ Name = 'PowerShell 7';         Winget = 'Microsoft.PowerShell';            Url = 'https://github.com/PowerShell/PowerShell/releases' }
     @{ Name = 'Windows Terminal';     Winget = 'Microsoft.WindowsTerminal';       Url = 'https://github.com/microsoft/terminal/releases' }
     @{ Name = 'Notepad++';            Winget = 'Notepad++.Notepad++';             Url = 'https://notepad-plus-plus.org/downloads/' }
+)
+
+# =====================================================================
+#  Библиотеки и среды выполнения (runtime). WingetList — набор пакетов
+#  одним пунктом; Action='netfx3' — включение .NET 3.5 через DISM.
+# =====================================================================
+$Runtimes = @(
+    @{ Name = 'Visual C++ Redist (2005-2022, x86+x64)'; WingetList = @(
+            'Microsoft.VCRedist.2015+.x64', 'Microsoft.VCRedist.2015+.x86',
+            'Microsoft.VCRedist.2013.x64', 'Microsoft.VCRedist.2013.x86',
+            'Microsoft.VCRedist.2012.x64', 'Microsoft.VCRedist.2012.x86',
+            'Microsoft.VCRedist.2010.x64', 'Microsoft.VCRedist.2010.x86',
+            'Microsoft.VCRedist.2008.x64', 'Microsoft.VCRedist.2008.x86',
+            'Microsoft.VCRedist.2005.x64', 'Microsoft.VCRedist.2005.x86') }
+    @{ Name = '.NET Desktop Runtime 8 (LTS)';  Winget = 'Microsoft.DotNet.DesktopRuntime.8' }
+    @{ Name = '.NET Desktop Runtime 6 (LTS)';  Winget = 'Microsoft.DotNet.DesktopRuntime.6' }
+    @{ Name = '.NET Framework 3.5 (DISM)';     Action = 'netfx3' }
+    @{ Name = 'DirectX End-User Runtime';      Winget = 'Microsoft.DirectX' }
+    @{ Name = 'Edge WebView2 Runtime';         Winget = 'Microsoft.EdgeWebView2Runtime' }
+    @{ Name = 'Windows App Runtime (WinUI 3)'; Winget = 'Microsoft.WindowsAppRuntime.1.5' }
+    @{ Name = 'Java Temurin JRE 8';            Winget = 'EclipseAdoptium.Temurin.8.JRE' }
+    @{ Name = 'Java Temurin JRE 17 (LTS)';     Winget = 'EclipseAdoptium.Temurin.17.JRE' }
 )
 
 # =====================================================================
@@ -398,6 +419,39 @@ function Show-AdminProgramMenu {
     if ($sel.Count -eq 0) { Write-Host "`n   Ничего не выбрано." -ForegroundColor DarkGray; Wait-Continue; return }
 
     foreach ($idx in $sel) { Install-Program $AdminPrograms[$idx] }
+    Write-Host "`n   Установка завершена." -ForegroundColor Green
+    Wait-Continue
+}
+
+function Install-Runtime {
+    param($r)
+    if ($r.Action -eq 'netfx3') {
+        Write-Host "`n   .NET Framework 3.5 (DISM, тянет из Windows Update)..." -ForegroundColor Green
+        DISM /Online /Enable-Feature /FeatureName:NetFx3 /All /NoRestart
+        return
+    }
+    if (-not $HasWinget) { Write-Host "`n   winget не найден — пропуск '$($r.Name)'." -ForegroundColor Yellow; return }
+    $ids = if ($r.WingetList) { $r.WingetList } else { @($r.Winget) }
+    Write-Host "`n   Установка '$($r.Name)'..." -ForegroundColor Green
+    foreach ($id in $ids) {
+        Write-Host "    winget: $id" -ForegroundColor DarkGray
+        winget install --id $id -e --source winget --accept-package-agreements --accept-source-agreements
+    }
+}
+
+function Show-RuntimeMenu {
+    if (-not (Test-Admin)) {
+        Write-Box 'Библиотеки и среды выполнения' 'Magenta'
+        Write-Host "   Установка библиотек требует прав администратора." -ForegroundColor Yellow
+        Write-Host "   Лучше выйти и запустить [A].`n" -ForegroundColor Yellow
+        if ((Read-Host "   Продолжить всё равно? (y/n)").Trim().ToLower() -ne 'y') { return }
+    }
+    $labels = @($Runtimes | ForEach-Object { $_.Name })
+    $sel = Show-CheckList 'Библиотеки и среды выполнения — отметь нужное' $labels 'Magenta' $true
+    if ($null -eq $sel)   { return }
+    if ($sel.Count -eq 0) { Write-Host "`n   Ничего не выбрано." -ForegroundColor DarkGray; Wait-Continue; return }
+
+    foreach ($idx in $sel) { Install-Runtime $Runtimes[$idx] }
     Write-Host "`n   Установка завершена." -ForegroundColor Green
     Wait-Continue
 }
@@ -772,16 +826,17 @@ function Show-Menu {
     Write-Host "   [6]  " -NoNewline -ForegroundColor Green; Write-Host "Обновить весь софт (winget upgrade)"
     Write-Host "   [7]  " -NoNewline -ForegroundColor Green; Write-Host "Утилиты: WinUtil / Win11Debloat / Sophia"
     Write-Host "   [8]  " -NoNewline -ForegroundColor Green; Write-Host "Программы для админа / Help Desk (галочками)"
+    Write-Host "   [9]  " -NoNewline -ForegroundColor Green; Write-Host "Библиотеки и среды выполнения (галочками)"
     Write-Host ""
     Write-Host "  ━━ Обслуживание Windows ━━" -ForegroundColor DarkCyan
-    Write-Host "   [9]  " -NoNewline -ForegroundColor Green; Write-Host "Лёгкая чистка (лишнее + TEMP + DNS)"
-    Write-Host "   [10] " -NoNewline -ForegroundColor Green; Write-Host "Базовые твики (расширения, тёмная тема, меню)"
-    Write-Host "   [11] " -NoNewline -ForegroundColor Green; Write-Host "Проверка/восстановление системы (DISM + SFC)"
-    Write-Host "   [12] " -NoNewline -ForegroundColor Green; Write-Host "Обновление драйверов (Dell/HP/Lenovo/Intel)"
+    Write-Host "   [10] " -NoNewline -ForegroundColor Green; Write-Host "Лёгкая чистка (лишнее + TEMP + DNS)"
+    Write-Host "   [11] " -NoNewline -ForegroundColor Green; Write-Host "Базовые твики (расширения, тёмная тема, меню)"
+    Write-Host "   [12] " -NoNewline -ForegroundColor Green; Write-Host "Проверка/восстановление системы (DISM + SFC)"
+    Write-Host "   [13] " -NoNewline -ForegroundColor Green; Write-Host "Обновление драйверов (Dell/HP/Lenovo/Intel)"
     Write-Host ""
     Write-Host "  ━━ Установка и активация ━━" -ForegroundColor DarkCyan
-    Write-Host "   [13] " -NoNewline -ForegroundColor Green;   Write-Host "MAS — активация Windows / Office"
-    Write-Host "   [14] " -NoNewline -ForegroundColor Magenta; Write-Host "Новый ПК — первичная настройка"
+    Write-Host "   [14] " -NoNewline -ForegroundColor Green;   Write-Host "MAS — активация Windows / Office"
+    Write-Host "   [15] " -NoNewline -ForegroundColor Magenta; Write-Host "Новый ПК — первичная настройка"
     Write-Host ""
     Write-Host "   [A]  " -NoNewline -ForegroundColor Yellow;  Write-Host "Перезапустить от имени администратора"
     Write-Host "   [0]  " -NoNewline -ForegroundColor Red;     Write-Host "Выход"
@@ -806,12 +861,13 @@ do {
         }
         '7'  { Show-UtilityMenu }
         '8'  { Show-AdminProgramMenu }
-        '9'  { Invoke-LightClean;   Wait-Continue }
-        '10' { Invoke-LightTweak;   Wait-Continue }
-        '11' { Repair-System;       Wait-Continue }
-        '12' { Invoke-DriverUpdate; Wait-Continue }
-        '13' { Invoke-Remote 'https://get.activated.win'; Wait-Continue }   # MAS
-        '14' { Invoke-NewPC;        Wait-Continue }
+        '9'  { Show-RuntimeMenu }
+        '10' { Invoke-LightClean;   Wait-Continue }
+        '11' { Invoke-LightTweak;   Wait-Continue }
+        '12' { Repair-System;       Wait-Continue }
+        '13' { Invoke-DriverUpdate; Wait-Continue }
+        '14' { Invoke-Remote 'https://get.activated.win'; Wait-Continue }   # MAS
+        '15' { Invoke-NewPC;        Wait-Continue }
         'A'  { Invoke-AdminRestart }
         '0'  { }
         default { Write-Host "`n  Неверный выбор." -ForegroundColor Yellow; Start-Sleep 1 }
