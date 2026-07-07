@@ -30,7 +30,7 @@ irm https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/menu.ps1 | iex
 - **Программы:** подменю установки **галочками** — Chrome, 7-Zip, VLC,
   qBittorrent, AnyDesk, Advanced IP Scanner, Winbox (MikroTik), Speedtest CLI,
   CrystalDiskInfo, HWiNFO, OCCT, FurMark, CrystalDiskMark
-  (через `winget`) + Dahua ConfigTool и SmartPSS Lite (открываются
+  (через `winget`) + Glow, Dahua ConfigTool и SmartPSS Lite (открываются
   официальной страницей загрузки). Отдельный пункт **«Обновить весь софт»** (`winget upgrade --all`)
 - **[8] Программы для админа / Help Desk** — отдельный чек-лист бесплатных
   инструментов (CLI+GUI): Sysinternals Suite, mRemoteNG, PuTTY, WinSCP, MobaXterm,
