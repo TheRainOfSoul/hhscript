@@ -19,53 +19,52 @@ $HasWinget = [bool](Get-Command winget -ErrorAction SilentlyContinue)
 #  откроется в браузере, если winget недоступен или пакета нет.
 # =====================================================================
 $Programs = @(
-    @{ Name = 'Google Chrome';        Winget = 'Google.Chrome';                 Url = 'https://www.google.com/chrome/' }
-    @{ Name = '7-Zip';                Winget = '7zip.7zip';                     Url = 'https://www.7-zip.org/' }
-    @{ Name = 'VLC media player';     Winget = 'VideoLAN.VLC';                  Url = 'https://www.videolan.org/vlc/' }
-    @{ Name = 'qBittorrent';          Winget = 'qBittorrent.qBittorrent';       Url = 'https://www.qbittorrent.org/download' }
-    @{ Name = 'AnyDesk';              Winget = 'AnyDeskSoftwareGmbH.AnyDesk';    Url = 'https://anydesk.com/download' }
-    @{ Name = 'Advanced IP Scanner';  Winget = 'Famatech.AdvancedIPScanner';    Url = 'https://www.advanced-ip-scanner.com/' }
-    @{ Name = 'Winbox (MikroTik)';    Winget = 'Mikrotik.Winbox';                Url = 'https://mikrotik.com/download' }
+    # --- Браузер / общее ---
+    @{ Name = 'Google Chrome';        Winget = 'Google.Chrome';                   Url = 'https://www.google.com/chrome/' }
+    @{ Name = '7-Zip';                Winget = '7zip.7zip';                       Url = 'https://www.7-zip.org/' }
+    @{ Name = 'VLC media player';     Winget = 'VideoLAN.VLC';                    Url = 'https://www.videolan.org/vlc/' }
+    @{ Name = 'qBittorrent';          Winget = 'qBittorrent.qBittorrent';         Url = 'https://www.qbittorrent.org/download' }
+    @{ Name = 'Notepad++';            Winget = 'Notepad++.Notepad++';             Url = 'https://notepad-plus-plus.org/downloads/' }
+    # --- Удалёнка / доступ ---
+    @{ Name = 'AnyDesk';              Winget = 'AnyDeskSoftwareGmbH.AnyDesk';      Url = 'https://anydesk.com/download' }
+    @{ Name = 'TightVNC';             Winget = 'GlavSoft.TightVNC';               Url = 'https://www.tightvnc.com/download.php' }
+    @{ Name = 'mRemoteNG';            Winget = 'mRemoteNG.mRemoteNG';             Url = 'https://mremoteng.org/download' }
+    @{ Name = 'MobaXterm';            Winget = 'Mobatek.MobaXterm';               Url = 'https://mobaxterm.mobatek.net/download.html' }
+    # --- Сеть / диагностика ---
+    @{ Name = 'Advanced IP Scanner';  Winget = 'Famatech.AdvancedIPScanner';      Url = 'https://www.advanced-ip-scanner.com/' }
+    @{ Name = 'Angry IP Scanner';     Winget = 'angryziber.AngryIPScanner';       Url = 'https://angryip.org/download/' }
+    @{ Name = 'Nmap';                 Winget = 'Insecure.Nmap';                   Url = 'https://nmap.org/download.html' }
+    @{ Name = 'Wireshark';            Winget = 'WiresharkFoundation.Wireshark';   Url = 'https://www.wireshark.org/download.html' }
+    @{ Name = 'Winbox (MikroTik)';    Winget = 'Mikrotik.Winbox';                 Url = 'https://mikrotik.com/download' }
+    @{ Name = 'PuTTY';                Winget = 'PuTTY.PuTTY';                     Url = 'https://www.putty.org/' }
+    @{ Name = 'WinSCP';               Winget = 'WinSCP.WinSCP';                   Url = 'https://winscp.net/eng/download.php' }
     @{ Name = 'Speedtest CLI (Ookla)'; Winget = 'Ookla.Speedtest.CLI';            Url = 'https://www.speedtest.net/apps/cli' }
+    # --- Система / диски / поиск ---
+    @{ Name = 'Sysinternals Suite';   Winget = 'Microsoft.Sysinternals.Suite';    Url = 'https://learn.microsoft.com/sysinternals/downloads/sysinternals-suite' }
+    @{ Name = 'HWiNFO (мониторинг)';  Winget = 'REALiX.HWiNFO';                   Url = 'https://www.hwinfo.com/download/' }
     @{ Name = 'CrystalDiskInfo';      Winget = 'CrystalDewWorld.CrystalDiskInfo'; Url = 'https://crystalmark.info/en/software/crystaldiskinfo/' }
-    @{ Name = 'HWiNFO (мониторинг)';  Winget = 'REALiX.HWiNFO';                  Url = 'https://www.hwinfo.com/download/' }
-    @{ Name = 'OCCT (стресс-тест)';   Winget = 'OCBase.OCCT.Personal';           Url = 'https://www.ocbase.com/' }
-    @{ Name = 'FurMark (стресс GPU)'; Winget = 'Geeks3D.FurMark.2';              Url = 'https://geeks3d.com/furmark/' }
     @{ Name = 'CrystalDiskMark';      Winget = 'CrystalDewWorld.CrystalDiskMark'; Url = 'https://crystalmark.info/en/software/crystaldiskmark/' }
-    @{ Name = 'Rufus (загруз. USB)';  Winget = 'Rufus.Rufus';                    Url = 'https://rufus.ie/' }
+    @{ Name = 'WizTree (диск)';       Winget = 'AntibodySoftware.WizTree';        Url = 'https://diskanalyzer.com/download' }
+    @{ Name = 'Everything (поиск)';   Winget = 'voidtools.Everything';            Url = 'https://www.voidtools.com/downloads/' }
     @{ Name = 'Glow (анализ системы)'; Winget = '';                               Url = 'https://github.com/turkaysoft/glow/releases' }
-    # --- Dahua: пакетов winget нет, открывается официальная страница загрузки в браузере.
-    #     Если ссылка устареет — обнови URL со страницы support.dahuasecurity.com -> Tools.
+    # --- Стресс / бенчмарк ---
+    @{ Name = 'OCCT (стресс-тест)';   Winget = 'OCBase.OCCT.Personal';            Url = 'https://www.ocbase.com/' }
+    @{ Name = 'FurMark (стресс GPU)'; Winget = 'Geeks3D.FurMark.2';               Url = 'https://geeks3d.com/furmark/' }
+    # --- Загрузочные USB ---
+    @{ Name = 'Rufus (загруз. USB)';  Winget = 'Rufus.Rufus';                     Url = 'https://rufus.ie/' }
+    @{ Name = 'Ventoy (мультизагр.)'; Winget = 'Ventoy.Ventoy';                   Url = 'https://www.ventoy.net/' }
+    # --- Безопасность ---
+    @{ Name = 'Malwarebytes';         Winget = 'Malwarebytes.Malwarebytes';       Url = 'https://www.malwarebytes.com/' }
+    @{ Name = 'KeePassXC (пароли)';   Winget = 'KeePassXCTeam.KeePassXC';         Url = 'https://keepassxc.org/download/' }
+    # --- Оболочка ---
+    @{ Name = 'PowerShell 7';         Winget = 'Microsoft.PowerShell';            Url = 'https://github.com/PowerShell/PowerShell/releases' }
+    @{ Name = 'Windows Terminal';     Winget = 'Microsoft.WindowsTerminal';       Url = 'https://github.com/microsoft/terminal/releases' }
+    # --- CCTV (в winget нет — открывается официальная страница загрузки) ---
     @{ Name = 'Dahua ConfigTool';     Winget = '';  Url = 'https://support.dahuasecurity.com/en/toolsDownloadDetails?IsDpValue=Q93jdSLr94chjRuQ1y%2FcQQ%3D%3D' }
     @{ Name = 'Dahua SmartPSS Lite';  Winget = '';  Url = 'https://support.dahuasecurity.com/en/toolsDownloadDetails?IsDpValue=Azcw9DN0IRfyUn9i%2Fvq6qA%3D%3D' }
-    # --- Hikvision SADP: поиск/активация Hik-устройств. В winget нет — офиц. страница.
     @{ Name = 'SADP (Hikvision)';     Winget = '';  Url = 'https://www.hikvision.com/en/support/tools/hitools/clc14d7e1a69a237dd/' }
     @{ Name = 'HiTools Delivery (Hikvision)'; Winget = ''; Url = 'https://www.hikvision.com/en/support/tools/hitools/cl7f0143d2c781a3e3/' }
     @{ Name = 'iVMS-4200 (Hikvision)'; Winget = ''; Url = 'https://www.hikvision.com/us-en/support/download/software/ivms4200-series/' }
-)
-
-# =====================================================================
-#  Бесплатные инструменты для сисадмина / Help Desk (CLI + GUI).
-# =====================================================================
-$AdminPrograms = @(
-    @{ Name = 'Sysinternals Suite';   Winget = 'Microsoft.Sysinternals.Suite';   Url = 'https://learn.microsoft.com/sysinternals/downloads/sysinternals-suite' }
-    @{ Name = 'mRemoteNG';            Winget = 'mRemoteNG.mRemoteNG';             Url = 'https://mremoteng.org/download' }
-    @{ Name = 'PuTTY';                Winget = 'PuTTY.PuTTY';                     Url = 'https://www.putty.org/' }
-    @{ Name = 'WinSCP';               Winget = 'WinSCP.WinSCP';                   Url = 'https://winscp.net/eng/download.php' }
-    @{ Name = 'MobaXterm';            Winget = 'Mobatek.MobaXterm';               Url = 'https://mobaxterm.mobatek.net/download.html' }
-    @{ Name = 'TightVNC';             Winget = 'GlavSoft.TightVNC';               Url = 'https://www.tightvnc.com/download.php' }
-    @{ Name = 'Nmap';                 Winget = 'Insecure.Nmap';                   Url = 'https://nmap.org/download.html' }
-    @{ Name = 'Wireshark';            Winget = 'WiresharkFoundation.Wireshark';   Url = 'https://www.wireshark.org/download.html' }
-    @{ Name = 'Angry IP Scanner';     Winget = 'angryziber.AngryIPScanner';       Url = 'https://angryip.org/download/' }
-    @{ Name = 'Everything (поиск)';   Winget = 'voidtools.Everything';            Url = 'https://www.voidtools.com/downloads/' }
-    @{ Name = 'WizTree (диск)';       Winget = 'AntibodySoftware.WizTree';        Url = 'https://diskanalyzer.com/download' }
-    @{ Name = 'Rufus (загруз. USB)';  Winget = 'Rufus.Rufus';                     Url = 'https://rufus.ie/' }
-    @{ Name = 'Ventoy (мультизагр.)'; Winget = 'Ventoy.Ventoy';                   Url = 'https://www.ventoy.net/' }
-    @{ Name = 'Malwarebytes';         Winget = 'Malwarebytes.Malwarebytes';       Url = 'https://www.malwarebytes.com/' }
-    @{ Name = 'KeePassXC (пароли)';   Winget = 'KeePassXCTeam.KeePassXC';         Url = 'https://keepassxc.org/download/' }
-    @{ Name = 'PowerShell 7';         Winget = 'Microsoft.PowerShell';            Url = 'https://github.com/PowerShell/PowerShell/releases' }
-    @{ Name = 'Windows Terminal';     Winget = 'Microsoft.WindowsTerminal';       Url = 'https://github.com/microsoft/terminal/releases' }
-    @{ Name = 'Notepad++';            Winget = 'Notepad++.Notepad++';             Url = 'https://notepad-plus-plus.org/downloads/' }
 )
 
 # =====================================================================
@@ -412,19 +411,6 @@ function Show-ProgramMenu {
     if ($sel.Count -eq 0) { Write-Host "`n   Ничего не выбрано." -ForegroundColor DarkGray; Wait-Continue; return }
 
     foreach ($idx in $sel) { Install-Program $Programs[$idx] }
-    Write-Host "`n   Установка завершена." -ForegroundColor Green
-    Wait-Continue
-}
-
-function Show-AdminProgramMenu {
-    $labels = @($AdminPrograms | ForEach-Object {
-        if ($HasWinget -and $_.Winget) { $_.Name } else { $_.Name + '  (сайт)' }
-    })
-    $sel = Show-CheckList 'Программы админа / Help Desk — отметь нужное' $labels 'Magenta' $false
-    if ($null -eq $sel)   { return }
-    if ($sel.Count -eq 0) { Write-Host "`n   Ничего не выбрано." -ForegroundColor DarkGray; Wait-Continue; return }
-
-    foreach ($idx in $sel) { Install-Program $AdminPrograms[$idx] }
     Write-Host "`n   Установка завершена." -ForegroundColor Green
     Wait-Continue
 }
@@ -831,18 +817,17 @@ function Show-Menu {
     Write-Host "   [5]  " -NoNewline -ForegroundColor Green; Write-Host "Установить программы (галочками)"
     Write-Host "   [6]  " -NoNewline -ForegroundColor Green; Write-Host "Обновить весь софт (winget upgrade)"
     Write-Host "   [7]  " -NoNewline -ForegroundColor Green; Write-Host "Утилиты: WinUtil / Win11Debloat / Sophia"
-    Write-Host "   [8]  " -NoNewline -ForegroundColor Green; Write-Host "Программы для админа / Help Desk (галочками)"
-    Write-Host "   [9]  " -NoNewline -ForegroundColor Green; Write-Host "Библиотеки и среды выполнения (галочками)"
+    Write-Host "   [8]  " -NoNewline -ForegroundColor Green; Write-Host "Библиотеки и среды выполнения (галочками)"
     Write-Host ""
     Write-Host "  ━━ Обслуживание Windows ━━" -ForegroundColor DarkCyan
-    Write-Host "   [10] " -NoNewline -ForegroundColor Green; Write-Host "Лёгкая чистка (лишнее + TEMP + DNS)"
-    Write-Host "   [11] " -NoNewline -ForegroundColor Green; Write-Host "Базовые твики (расширения, тёмная тема, меню)"
-    Write-Host "   [12] " -NoNewline -ForegroundColor Green; Write-Host "Проверка/восстановление системы (DISM + SFC)"
-    Write-Host "   [13] " -NoNewline -ForegroundColor Green; Write-Host "Обновление драйверов (Dell/HP/Lenovo/Intel)"
+    Write-Host "   [9]  " -NoNewline -ForegroundColor Green; Write-Host "Лёгкая чистка (лишнее + TEMP + DNS)"
+    Write-Host "   [10] " -NoNewline -ForegroundColor Green; Write-Host "Базовые твики (расширения, тёмная тема, меню)"
+    Write-Host "   [11] " -NoNewline -ForegroundColor Green; Write-Host "Проверка/восстановление системы (DISM + SFC)"
+    Write-Host "   [12] " -NoNewline -ForegroundColor Green; Write-Host "Обновление драйверов (Dell/HP/Lenovo/Intel)"
     Write-Host ""
     Write-Host "  ━━ Установка и активация ━━" -ForegroundColor DarkCyan
-    Write-Host "   [14] " -NoNewline -ForegroundColor Green;   Write-Host "MAS — активация Windows / Office"
-    Write-Host "   [15] " -NoNewline -ForegroundColor Magenta; Write-Host "Новый ПК — первичная настройка"
+    Write-Host "   [13] " -NoNewline -ForegroundColor Green;   Write-Host "MAS — активация Windows / Office"
+    Write-Host "   [14] " -NoNewline -ForegroundColor Magenta; Write-Host "Новый ПК — первичная настройка"
     Write-Host ""
     Write-Host "   [A]  " -NoNewline -ForegroundColor Yellow;  Write-Host "Перезапустить от имени администратора"
     Write-Host "   [0]  " -NoNewline -ForegroundColor Red;     Write-Host "Выход"
@@ -866,14 +851,13 @@ do {
             Wait-Continue
         }
         '7'  { Show-UtilityMenu }
-        '8'  { Show-AdminProgramMenu }
-        '9'  { Show-RuntimeMenu }
-        '10' { Invoke-LightClean;   Wait-Continue }
-        '11' { Invoke-LightTweak;   Wait-Continue }
-        '12' { Repair-System;       Wait-Continue }
-        '13' { Invoke-DriverUpdate; Wait-Continue }
-        '14' { Invoke-Remote 'https://get.activated.win'; Wait-Continue }   # MAS
-        '15' { Invoke-NewPC;        Wait-Continue }
+        '8'  { Show-RuntimeMenu }
+        '9'  { Invoke-LightClean;   Wait-Continue }
+        '10' { Invoke-LightTweak;   Wait-Continue }
+        '11' { Repair-System;       Wait-Continue }
+        '12' { Invoke-DriverUpdate; Wait-Continue }
+        '13' { Invoke-Remote 'https://get.activated.win'; Wait-Continue }   # MAS
+        '14' { Invoke-NewPC;        Wait-Continue }
         'A'  { Invoke-AdminRestart }
         '0'  { }
         default { Write-Host "`n  Неверный выбор." -ForegroundColor Yellow; Start-Sleep 1 }

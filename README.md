@@ -27,32 +27,32 @@ irm https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/menu.ps1 | iex
   авто, сброс сети) — всё inline, без тяжёлых внешних утилит. Чистка и твики —
   с выбором пунктов **галочками** (↑/↓ навигация, Пробел — отметить, A — все,
   Enter — применить, Esc — отмена; резервный режим — ввод номеров)
-- **Программы:** подменю установки **галочками** — Chrome, 7-Zip, VLC,
-  qBittorrent, AnyDesk, Advanced IP Scanner, Winbox (MikroTik), Speedtest CLI,
-  CrystalDiskInfo, HWiNFO, OCCT, FurMark, CrystalDiskMark, Rufus
-  (через `winget`) + Glow, Dahua ConfigTool, SmartPSS Lite, SADP, HiTools Delivery и iVMS-4200 (Hikvision) (открываются
-  официальной страницей загрузки). Отдельный пункт **«Обновить весь софт»** (`winget upgrade --all`)
-- **[8] Программы для админа / Help Desk** — отдельный чек-лист бесплатных
-  инструментов (CLI+GUI): Sysinternals Suite, mRemoteNG, PuTTY, WinSCP, MobaXterm,
-  TightVNC, Nmap, Wireshark, Angry IP Scanner, Everything, WizTree, Rufus, Ventoy,
-  Malwarebytes, KeePassXC, PowerShell 7, Windows Terminal, Notepad++ (через `winget`).
-- **[9] Библиотеки и среды выполнения** — чек-лист runtime (по умолчанию всё
+- **Программы:** единый чек-лист установки **галочками** (37 шт., CLI+GUI):
+  браузер/архиватор (Chrome, 7-Zip, VLC, qBittorrent, Notepad++), удалёнка
+  (AnyDesk, TightVNC, mRemoteNG, MobaXterm), сеть (Advanced/Angry IP Scanner,
+  Nmap, Wireshark, Winbox, PuTTY, WinSCP, Speedtest CLI), система/диски
+  (Sysinternals, HWiNFO, CrystalDiskInfo/Mark, WizTree, Everything, Glow), стресс
+  (OCCT, FurMark), USB (Rufus, Ventoy), безопасность (Malwarebytes, KeePassXC),
+  оболочка (PowerShell 7, Windows Terminal) — через `winget`; плюс CCTV
+  (Dahua ConfigTool/SmartPSS, Hikvision SADP/HiTools Delivery/iVMS-4200) —
+  открываются официальной страницей. Отдельный пункт **«Обновить весь софт»** (`winget upgrade --all`)
+- **[8] Библиотеки и среды выполнения** — чек-лист runtime (по умолчанию всё
   отмечено): Visual C++ Redist (все 2005-2022, x86+x64), .NET Desktop Runtime 8/6,
   .NET Framework 3.5 (DISM), DirectX, Edge WebView2, Windows App Runtime,
   Java Temurin JRE 8/17. Требует прав администратора ([A]).
-- **[13] Обновление драйверов** — определяет производителя и ставит драйверы из
+- **[12] Обновление драйверов** — определяет производителя и ставит драйверы из
   **официального источника** (без Windows Update): Dell → Dell Command Update
   (dcu-cli), HP → HP Image Assistant (HPIA), Lenovo → Thin Installer,
   Intel-платы → Intel DSA, AMD/прочее → официальная страница вендора.
   Требует прав администратора ([A]).
-- **[12] Проверка/восстановление системы** — `DISM /RestoreHealth` + `sfc /scannow`
+- **[11] Проверка/восстановление системы** — `DISM /RestoreHealth` + `sfc /scannow`
   (починка системных файлов). Требует прав администратора ([A]).
 - **[4] Стресс-тест ПК** — отдельный скрипт `scripts/stresstest.ps1`: встроенный
   CPU-прожиг (100% всех ядер на N минут, чистый PowerShell) + запуск OCCT /
   FurMark / CrystalDiskMark / HWiNFO. Запускается и сам по себе через `irm`.
-- **[15] Новый ПК** — первичная настройка чистой машины одной кнопкой: ставит
+- **[14] Новый ПК** — первичная настройка чистой машины одной кнопкой: ставит
   Chrome / 7-Zip / AnyDesk, выносит иконку «Этот компьютер» на рабочий стол,
-  отключает виджеты и обновляет драйверы (та же логика, что **[13]**).
+  отключает виджеты и обновляет драйверы (та же логика, что **[12]**).
   **Без Windows Update.** Требует прав администратора ([A]).
 - **[3] Калькулятор диска для камер (модель Dahua)** — считает как официальный
   калькулятор Dahua, в обе стороны: *сколько диска нужно на N дней* ↔ *на сколько
