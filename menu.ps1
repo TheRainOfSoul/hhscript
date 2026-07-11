@@ -20,18 +20,18 @@ $HasWinget = [bool](Get-Command winget -ErrorAction SilentlyContinue)
 # =====================================================================
 $Programs = @(
     # --- Браузер / общее ---
-    @{ Name = 'Google Chrome';        Winget = 'Google.Chrome';                   Url = 'https://www.google.com/chrome/' }
+    @{ Group = 'Браузер / общее'; Name = 'Google Chrome';        Winget = 'Google.Chrome';                   Url = 'https://www.google.com/chrome/' }
     @{ Name = '7-Zip';                Winget = '7zip.7zip';                       Url = 'https://www.7-zip.org/' }
     @{ Name = 'VLC media player';     Winget = 'VideoLAN.VLC';                    Url = 'https://www.videolan.org/vlc/' }
     @{ Name = 'qBittorrent';          Winget = 'qBittorrent.qBittorrent';         Url = 'https://www.qbittorrent.org/download' }
     @{ Name = 'Notepad++';            Winget = 'Notepad++.Notepad++';             Url = 'https://notepad-plus-plus.org/downloads/' }
     # --- Удалёнка / доступ ---
-    @{ Name = 'AnyDesk';              Winget = 'AnyDeskSoftwareGmbH.AnyDesk';      Url = 'https://anydesk.com/download' }
+    @{ Group = 'Удалёнка / доступ'; Name = 'AnyDesk';              Winget = 'AnyDeskSoftwareGmbH.AnyDesk';      Url = 'https://anydesk.com/download' }
     @{ Name = 'TightVNC';             Winget = 'GlavSoft.TightVNC';               Url = 'https://www.tightvnc.com/download.php' }
     @{ Name = 'mRemoteNG';            Winget = 'mRemoteNG.mRemoteNG';             Url = 'https://mremoteng.org/download' }
     @{ Name = 'MobaXterm';            Winget = 'Mobatek.MobaXterm';               Url = 'https://mobaxterm.mobatek.net/download.html' }
     # --- Сеть / диагностика ---
-    @{ Name = 'Advanced IP Scanner';  Winget = 'Famatech.AdvancedIPScanner';      Url = 'https://www.advanced-ip-scanner.com/' }
+    @{ Group = 'Сеть / диагностика'; Name = 'Advanced IP Scanner';  Winget = 'Famatech.AdvancedIPScanner';      Url = 'https://www.advanced-ip-scanner.com/' }
     @{ Name = 'Angry IP Scanner';     Winget = 'angryziber.AngryIPScanner';       Url = 'https://angryip.org/download/' }
     @{ Name = 'Nmap';                 Winget = 'Insecure.Nmap';                   Url = 'https://nmap.org/download.html' }
     @{ Name = 'Wireshark';            Winget = 'WiresharkFoundation.Wireshark';   Url = 'https://www.wireshark.org/download.html' }
@@ -40,7 +40,7 @@ $Programs = @(
     @{ Name = 'WinSCP';               Winget = 'WinSCP.WinSCP';                   Url = 'https://winscp.net/eng/download.php' }
     @{ Name = 'Speedtest CLI (Ookla)'; Winget = 'Ookla.Speedtest.CLI';            Url = 'https://www.speedtest.net/apps/cli' }
     # --- Система / диски / поиск ---
-    @{ Name = 'Sysinternals Suite';   Winget = 'Microsoft.Sysinternals.Suite';    Url = 'https://learn.microsoft.com/sysinternals/downloads/sysinternals-suite' }
+    @{ Group = 'Система / диски / поиск'; Name = 'Sysinternals Suite';   Winget = 'Microsoft.Sysinternals.Suite';    Url = 'https://learn.microsoft.com/sysinternals/downloads/sysinternals-suite' }
     @{ Name = 'HWiNFO (мониторинг)';  Winget = 'REALiX.HWiNFO';                   Url = 'https://www.hwinfo.com/download/' }
     @{ Name = 'CrystalDiskInfo';      Winget = 'CrystalDewWorld.CrystalDiskInfo'; Url = 'https://crystalmark.info/en/software/crystaldiskinfo/' }
     @{ Name = 'CrystalDiskMark';      Winget = 'CrystalDewWorld.CrystalDiskMark'; Url = 'https://crystalmark.info/en/software/crystaldiskmark/' }
@@ -48,19 +48,19 @@ $Programs = @(
     @{ Name = 'Everything (поиск)';   Winget = 'voidtools.Everything';            Url = 'https://www.voidtools.com/downloads/' }
     @{ Name = 'Glow (анализ системы)'; Winget = '';                               Url = 'https://github.com/turkaysoft/glow/releases' }
     # --- Стресс / бенчмарк ---
-    @{ Name = 'OCCT (стресс-тест)';   Winget = 'OCBase.OCCT.Personal';            Url = 'https://www.ocbase.com/' }
+    @{ Group = 'Стресс / бенчмарк'; Name = 'OCCT (стресс-тест)';   Winget = 'OCBase.OCCT.Personal';            Url = 'https://www.ocbase.com/' }
     @{ Name = 'FurMark (стресс GPU)'; Winget = 'Geeks3D.FurMark.2';               Url = 'https://geeks3d.com/furmark/' }
     # --- Загрузочные USB ---
-    @{ Name = 'Rufus (загруз. USB)';  Winget = 'Rufus.Rufus';                     Url = 'https://rufus.ie/' }
+    @{ Group = 'Загрузочные USB'; Name = 'Rufus (загруз. USB)';  Winget = 'Rufus.Rufus';                     Url = 'https://rufus.ie/' }
     @{ Name = 'Ventoy (мультизагр.)'; Winget = 'Ventoy.Ventoy';                   Url = 'https://www.ventoy.net/' }
     # --- Безопасность ---
-    @{ Name = 'Malwarebytes';         Winget = 'Malwarebytes.Malwarebytes';       Url = 'https://www.malwarebytes.com/' }
+    @{ Group = 'Безопасность'; Name = 'Malwarebytes';         Winget = 'Malwarebytes.Malwarebytes';       Url = 'https://www.malwarebytes.com/' }
     @{ Name = 'KeePassXC (пароли)';   Winget = 'KeePassXCTeam.KeePassXC';         Url = 'https://keepassxc.org/download/' }
     # --- Оболочка ---
-    @{ Name = 'PowerShell 7';         Winget = 'Microsoft.PowerShell';            Url = 'https://github.com/PowerShell/PowerShell/releases' }
+    @{ Group = 'Оболочка'; Name = 'PowerShell 7';         Winget = 'Microsoft.PowerShell';            Url = 'https://github.com/PowerShell/PowerShell/releases' }
     @{ Name = 'Windows Terminal';     Winget = 'Microsoft.WindowsTerminal';       Url = 'https://github.com/microsoft/terminal/releases' }
     # --- CCTV (в winget нет — открывается официальная страница загрузки) ---
-    @{ Name = 'Dahua ConfigTool';     Winget = '';  Url = 'https://support.dahuasecurity.com/en/toolsDownloadDetails?IsDpValue=Q93jdSLr94chjRuQ1y%2FcQQ%3D%3D' }
+    @{ Group = 'CCTV (открывается сайтом)'; Name = 'Dahua ConfigTool'; Winget = '';  Url = 'https://support.dahuasecurity.com/en/toolsDownloadDetails?IsDpValue=Q93jdSLr94chjRuQ1y%2FcQQ%3D%3D' }
     @{ Name = 'Dahua SmartPSS Lite';  Winget = '';  Url = 'https://support.dahuasecurity.com/en/toolsDownloadDetails?IsDpValue=Azcw9DN0IRfyUn9i%2Fvq6qA%3D%3D' }
     @{ Name = 'SADP (Hikvision)';     Winget = '';  Url = 'https://www.hikvision.com/en/support/tools/hitools/clc14d7e1a69a237dd/' }
     @{ Name = 'HiTools Delivery (Hikvision)'; Winget = ''; Url = 'https://www.hikvision.com/en/support/tools/hitools/cl7f0143d2c781a3e3/' }
@@ -233,7 +233,7 @@ function Show-PCInfo {
 #  Возвращает массив индексов отмеченных пунктов или $null при отмене.
 # =====================================================================
 function Show-CheckList {
-    param([string]$Title, [string[]]$Items, [string]$Color = 'Yellow', [bool]$DefaultChecked = $true)
+    param([string]$Title, [string[]]$Items, [string]$Color = 'Yellow', [bool]$DefaultChecked = $true, [hashtable]$Headers = $null)
 
     $n     = $Items.Count
     $state = @($Items | ForEach-Object { $DefaultChecked })   # стартовое состояние галочек
@@ -250,6 +250,9 @@ function Show-CheckList {
             Write-Host "   Номера через пробел — переключить, all/none, пусто — применить, 0 — отмена`n" -ForegroundColor DarkGray
         }
         for ($i = 0; $i -lt $n; $i++) {
+            if ($Headers -and $Headers.ContainsKey($i)) {
+                Write-Host ("   ── " + $Headers[$i] + " ──") -ForegroundColor DarkCyan
+            }
             $mark = if ($state[$i]) { '[x]' } else { '[ ]' }
             if ($interactive -and $i -eq $cur) {
                 Write-Host ("   > $mark " + $Items[$i]) -ForegroundColor Black -BackgroundColor Gray
@@ -406,7 +409,10 @@ function Show-ProgramMenu {
     $labels = @($Programs | ForEach-Object {
         if ($HasWinget -and $_.Winget) { $_.Name } else { $_.Name + '  (сайт)' }
     })
-    $sel = Show-CheckList 'Установка программ — отметь нужное' $labels 'Magenta' $false
+    # Заголовки групп: у стартовой записи каждой группы задано поле Group
+    $headers = @{}
+    for ($i = 0; $i -lt $Programs.Count; $i++) { if ($Programs[$i].Group) { $headers[$i] = $Programs[$i].Group } }
+    $sel = Show-CheckList 'Установка программ — отметь нужное' $labels 'Magenta' $false $headers
     if ($null -eq $sel)   { return }
     if ($sel.Count -eq 0) { Write-Host "`n   Ничего не выбрано." -ForegroundColor DarkGray; Wait-Continue; return }
 
