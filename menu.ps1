@@ -40,6 +40,7 @@ $Programs = @(
     # --- Hikvision SADP: поиск/активация Hik-устройств. В winget нет — офиц. страница.
     @{ Name = 'SADP (Hikvision)';     Winget = '';  Url = 'https://www.hikvision.com/en/support/tools/hitools/clc14d7e1a69a237dd/' }
     @{ Name = 'HiTools Delivery (Hikvision)'; Winget = ''; Url = 'https://www.hikvision.com/en/support/tools/hitools/cl7f0143d2c781a3e3/' }
+    @{ Name = 'iVMS-4200 (Hikvision)'; Winget = ''; Url = 'https://www.hikvision.com/us-en/support/download/software/ivms4200-series/' }
 )
 
 # =====================================================================
