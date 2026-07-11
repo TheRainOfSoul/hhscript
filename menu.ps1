@@ -37,6 +37,8 @@ $Programs = @(
     #     Если ссылка устареет — обнови URL со страницы support.dahuasecurity.com -> Tools.
     @{ Name = 'Dahua ConfigTool';     Winget = '';  Url = 'https://support.dahuasecurity.com/en/toolsDownloadDetails?IsDpValue=Q93jdSLr94chjRuQ1y%2FcQQ%3D%3D' }
     @{ Name = 'Dahua SmartPSS Lite';  Winget = '';  Url = 'https://support.dahuasecurity.com/en/toolsDownloadDetails?IsDpValue=Azcw9DN0IRfyUn9i%2Fvq6qA%3D%3D' }
+    # --- Hikvision SADP: поиск/активация Hik-устройств. В winget нет — офиц. страница.
+    @{ Name = 'SADP (Hikvision)';     Winget = '';  Url = 'https://www.hikvision.com/en/support/tools/hitools/clc14d7e1a69a237dd/' }
 )
 
 # =====================================================================
