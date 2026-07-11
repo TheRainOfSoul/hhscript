@@ -12,6 +12,8 @@ try { [Net.ServicePointManager]::SecurityProtocol = `
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 
 $HasWinget = [bool](Get-Command winget -ErrorAction SilentlyContinue)
+$Version   = '2026.07.11'                              # версия скрипта (в шапке меню)
+$LogFile   = Join-Path $env:USERPROFILE 'HHToolbox.log' # лог действий (для истории/акта)
 
 # =====================================================================
 #  СПИСОК ПРОГРАММ для подменю установки.
@@ -116,17 +118,53 @@ function Invoke-Remote {
     }
 }
 
-function Install-Program {
+# Установить один пункт: winget (Winget или WingetList), сайт (Url) или DISM
+# (Action='netfx3'). Возвращает $true при успехе, $false при проблеме — для сводки.
+function Install-Item {
     param($p)
-    if ($HasWinget -and $p.Winget) {
-        Write-Host "`n  Установка '$($p.Name)' через winget...`n" -ForegroundColor Green
-        winget install --id $p.Winget -e --source winget `
-            --accept-package-agreements --accept-source-agreements
-    } elseif ($p.Url) {
-        Write-Host "`n  Открываю страницу загрузки '$($p.Name)' в браузере..." -ForegroundColor Yellow
+    if ($p.Action -eq 'netfx3') {
+        Write-Host "`n   .NET Framework 3.5 (DISM, тянет из Windows Update)..." -ForegroundColor Green
+        DISM /Online /Enable-Feature /FeatureName:NetFx3 /All /NoRestart | Out-Null
+        return ($LASTEXITCODE -eq 0)
+    }
+    $ids = if ($p.WingetList) { $p.WingetList } elseif ($p.Winget) { @($p.Winget) } else { @() }
+    if ($ids.Count -and $HasWinget) {
+        $ok = $true
+        Write-Host "`n   Установка '$($p.Name)'..." -ForegroundColor Green
+        foreach ($id in $ids) {
+            Write-Host "    winget: $id" -ForegroundColor DarkGray
+            winget install --id $id -e --source winget --accept-package-agreements --accept-source-agreements
+            if ($LASTEXITCODE -ne 0) { $ok = $false }
+        }
+        return $ok
+    }
+    if ($p.Url) {
+        Write-Host "`n   Открываю страницу загрузки '$($p.Name)' в браузере..." -ForegroundColor Yellow
         Start-Process $p.Url
-    } else {
-        Write-Host "`n  Нет данных для установки '$($p.Name)'." -ForegroundColor Red
+        return $true
+    }
+    Write-Host "`n   Нет данных для установки '$($p.Name)'." -ForegroundColor Red
+    return $false
+}
+
+# Лог действий в файл (для истории/акта на объекте).
+function Write-Log {
+    param([string]$Message)
+    try { ("{0}  {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message) |
+        Out-File -FilePath $LogFile -Append -Encoding utf8 -ErrorAction SilentlyContinue } catch {}
+}
+
+# Точка восстановления перед разрушающими действиями. Нужен админ;
+# система сама троттлит создание (обычно раз в ~24 ч) — это нормально.
+function Add-RestorePoint {
+    param([string]$Description = 'HH Toolbox')
+    if (-not (Test-Admin)) { return }
+    try {
+        Enable-ComputerRestore -Drive "$env:SystemDrive\" -ErrorAction SilentlyContinue
+        Checkpoint-Computer -Description $Description -RestorePointType 'MODIFY_SETTINGS' -ErrorAction Stop
+        Write-Host "   Точка восстановления создана." -ForegroundColor DarkGray
+    } catch {
+        Write-Host "   Точку восстановления создать не удалось (пропуск)." -ForegroundColor DarkYellow
     }
 }
 
@@ -339,6 +377,7 @@ function Invoke-LightClean {
     if ($null -eq $sel)   { Write-Host "`n   Отменено." -ForegroundColor DarkGray; return }
     if ($sel.Count -eq 0) { Write-Host "`n   Ничего не выбрано." -ForegroundColor DarkGray; return }
 
+    Add-RestorePoint 'Перед лёгкой чисткой (HH Toolbox)'
     $admin = Test-Admin
     Write-Host "`n   Выполняю..." -ForegroundColor DarkGray
     foreach ($idx in $sel) {
@@ -390,6 +429,7 @@ function Invoke-LightTweak {
     if ($null -eq $sel)   { Write-Host "`n   Отменено." -ForegroundColor DarkGray; return }
     if ($sel.Count -eq 0) { Write-Host "`n   Ничего не выбрано." -ForegroundColor DarkGray; return }
 
+    Add-RestorePoint 'Перед твиками (HH Toolbox)'
     Write-Host "`n   Применяю..." -ForegroundColor DarkGray
     foreach ($idx in $sel) {
         & $tweaks[$idx].Do
@@ -416,25 +456,10 @@ function Show-ProgramMenu {
     if ($null -eq $sel)   { return }
     if ($sel.Count -eq 0) { Write-Host "`n   Ничего не выбрано." -ForegroundColor DarkGray; Wait-Continue; return }
 
-    foreach ($idx in $sel) { Install-Program $Programs[$idx] }
-    Write-Host "`n   Установка завершена." -ForegroundColor Green
+    $ok = 0; $bad = 0
+    foreach ($idx in $sel) { if (Install-Item $Programs[$idx]) { $ok++ } else { $bad++ } }
+    Write-Host ("`n   Готово: успешно {0}, с проблемами {1} (уже стоит/ошибка — см. вывод выше)." -f $ok, $bad) -ForegroundColor Green
     Wait-Continue
-}
-
-function Install-Runtime {
-    param($r)
-    if ($r.Action -eq 'netfx3') {
-        Write-Host "`n   .NET Framework 3.5 (DISM, тянет из Windows Update)..." -ForegroundColor Green
-        DISM /Online /Enable-Feature /FeatureName:NetFx3 /All /NoRestart
-        return
-    }
-    if (-not $HasWinget) { Write-Host "`n   winget не найден — пропуск '$($r.Name)'." -ForegroundColor Yellow; return }
-    $ids = if ($r.WingetList) { $r.WingetList } else { @($r.Winget) }
-    Write-Host "`n   Установка '$($r.Name)'..." -ForegroundColor Green
-    foreach ($id in $ids) {
-        Write-Host "    winget: $id" -ForegroundColor DarkGray
-        winget install --id $id -e --source winget --accept-package-agreements --accept-source-agreements
-    }
 }
 
 function Show-RuntimeMenu {
@@ -449,8 +474,9 @@ function Show-RuntimeMenu {
     if ($null -eq $sel)   { return }
     if ($sel.Count -eq 0) { Write-Host "`n   Ничего не выбрано." -ForegroundColor DarkGray; Wait-Continue; return }
 
-    foreach ($idx in $sel) { Install-Runtime $Runtimes[$idx] }
-    Write-Host "`n   Установка завершена." -ForegroundColor Green
+    $ok = 0; $bad = 0
+    foreach ($idx in $sel) { if (Install-Item $Runtimes[$idx]) { $ok++ } else { $bad++ } }
+    Write-Host ("`n   Готово: успешно {0}, с проблемами {1} (уже стоит/ошибка — см. выше)." -f $ok, $bad) -ForegroundColor Green
     Wait-Continue
 }
 
@@ -537,6 +563,7 @@ function Invoke-DriverUpdate {
         Write-Host "   Установка драйверов требует прав администратора." -ForegroundColor Yellow
         Write-Host "   Лучше выйти и запустить [A].`n" -ForegroundColor Yellow
     }
+    Add-RestorePoint 'Перед обновлением драйверов (HH Toolbox)'
     $bb = Get-CimInstance Win32_BaseBoard -ErrorAction SilentlyContinue
     $cs = Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue
     $vendor = "$($cs.Manufacturer)"
@@ -580,6 +607,7 @@ function Invoke-NewPC {
     }
     if ((Read-Host "   Начать настройку нового ПК? (y/n)").Trim().ToLower() -ne 'y') { return }
 
+    Add-RestorePoint 'Перед настройкой Новый ПК (HH Toolbox)'
     # 1/4 — программы
     Write-Host "`n  [1/4] Установка программ (Chrome, 7-Zip, AnyDesk)..." -ForegroundColor Cyan
     if ($HasWinget) {
@@ -773,8 +801,8 @@ function Show-UtilityMenu {
         switch ((Read-Host "  Выбор").Trim()) {
             '1' { Invoke-Remote 'https://christitus.com/win'; Wait-Continue }
             '2' { Invoke-Remote 'https://debloat.raphi.re/';  Wait-Continue }
-            '3' { Install-Program @{ Name = 'SophiApp';      Winget = 'TeamSophia.SophiApp';    Url = 'https://github.com/Sophia-Community/SophiApp/releases' }; Wait-Continue }
-            '4' { Install-Program @{ Name = 'Sophia Script'; Winget = 'TeamSophia.SophiaScript'; Url = 'https://github.com/farag2/Sophia-Script-for-Windows/releases' }; Wait-Continue }
+            '3' { $null = Install-Item @{ Name = 'SophiApp';      Winget = 'TeamSophia.SophiApp';    Url = 'https://github.com/Sophia-Community/SophiApp/releases' }; Wait-Continue }
+            '4' { $null = Install-Item @{ Name = 'Sophia Script'; Winget = 'TeamSophia.SophiaScript'; Url = 'https://github.com/farag2/Sophia-Script-for-Windows/releases' }; Wait-Continue }
             '0' { return }
             default { Write-Host "`n  Неверный выбор." -ForegroundColor Yellow; Start-Sleep 1 }
         }
@@ -801,9 +829,41 @@ function Repair-System {
     Write-Host "`n   Готово. Если остались ошибки — перезагрузи ПК и запусти повторно." -ForegroundColor Green
 }
 
+function Invoke-WingetUpgrade {
+    if ($HasWinget) {
+        Write-Host "`n   Обновление всего установленного софта..." -ForegroundColor Green
+        winget upgrade --all --include-unknown --accept-package-agreements --accept-source-agreements
+    } else { Write-Host "`n   winget не найден." -ForegroundColor Yellow }
+}
+
 # =====================================================================
-#  Главное меню
+#  ГЛАВНОЕ МЕНЮ — описание данными. Добавить пункт = одна строка ниже;
+#  номера проставляются автоматически, перенумерация не нужна.
+#  Поля: Section — заголовок; Label + Action — пункт; Admin=$true — нужен
+#  админ (предложит перезапуск); Color — цвет номера.
 # =====================================================================
+$Menu = @(
+    @{ Section = 'Диагностика и сеть' }
+    @{ Label = 'Информация о ПК';                                 Action = { Show-PCInfo; Wait-Continue } }
+    @{ Label = 'Сетевые утилиты (DNS, ping, сброс сети)';         Action = { Show-NetworkMenu } }
+    @{ Label = 'Калькулятор диска для камер (модель Dahua)';      Action = { Show-StorageCalc; Wait-Continue } }
+    @{ Label = 'Стресс-тест ПК (CPU-прожиг + OCCT/FurMark/диск)'; Action = { Invoke-Remote 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/scripts/stresstest.ps1'; Wait-Continue } }
+    @{ Section = 'Программы' }
+    @{ Label = 'Установить программы (галочками)';                Action = { Show-ProgramMenu } }
+    @{ Label = 'Обновить весь софт (winget upgrade)';            Action = { Invoke-WingetUpgrade; Wait-Continue } }
+    @{ Label = 'Утилиты: WinUtil / Win11Debloat / Sophia';        Action = { Show-UtilityMenu } }
+    @{ Label = 'Библиотеки и среды выполнения (галочками)';       Action = { Show-RuntimeMenu } }
+    @{ Section = 'Обслуживание Windows' }
+    @{ Label = 'Лёгкая чистка (лишнее + TEMP + DNS)';            Action = { Invoke-LightClean; Wait-Continue }; Admin = $true }
+    @{ Label = 'Базовые твики (расширения, тёмная тема, меню)';  Action = { Invoke-LightTweak; Wait-Continue } }
+    @{ Label = 'Проверка/восстановление системы (DISM + SFC)';   Action = { Repair-System; Wait-Continue }; Admin = $true }
+    @{ Label = 'Обновление драйверов (Dell/HP/Lenovo/Intel)';    Action = { Invoke-DriverUpdate; Wait-Continue }; Admin = $true }
+    @{ Section = 'Установка и активация' }
+    @{ Label = 'MAS — активация Windows / Office';               Action = { Invoke-Remote 'https://get.activated.win'; Wait-Continue } }
+    @{ Label = 'Новый ПК — первичная настройка';                Action = { Invoke-NewPC; Wait-Continue }; Admin = $true; Color = 'Magenta' }
+)
+
+# Рендер меню: печатает секции и авто-номера, возвращает карту «номер -> пункт».
 function Show-Menu {
     Clear-Host
     $mode = if (Test-Admin) { 'АДМИН' } else { 'обычный пользователь' }
@@ -811,63 +871,46 @@ function Show-Menu {
     Write-Host "  ╔════════════════════════════════════════════╗" -ForegroundColor Cyan
     Write-Host "  ║                  HH Toolbox                ║" -ForegroundColor Cyan
     Write-Host "  ╚════════════════════════════════════════════╝" -ForegroundColor Cyan
-    Write-Host "   Режим: $mode`n" -ForegroundColor DarkGray
+    Write-Host "   Режим: $mode · v$Version`n" -ForegroundColor DarkGray
 
-    Write-Host "  ━━ Диагностика и сеть ━━" -ForegroundColor DarkCyan
-    Write-Host "   [1]  " -NoNewline -ForegroundColor Green; Write-Host "Информация о ПК"
-    Write-Host "   [2]  " -NoNewline -ForegroundColor Green; Write-Host "Сетевые утилиты (DNS, ping, сброс сети)"
-    Write-Host "   [3]  " -NoNewline -ForegroundColor Green; Write-Host "Калькулятор диска для камер (модель Dahua)"
-    Write-Host "   [4]  " -NoNewline -ForegroundColor Green; Write-Host "Стресс-тест ПК (CPU-прожиг + OCCT/FurMark/диск)"
+    $map = @{}
+    $num = 0
+    $first = $true
+    foreach ($e in $Menu) {
+        if ($e.Section) {
+            if (-not $first) { Write-Host "" }
+            Write-Host "  ━━ $($e.Section) ━━" -ForegroundColor DarkCyan
+            $first = $false
+            continue
+        }
+        $num++
+        $map["$num"] = $e
+        $col = if ($e.Color) { $e.Color } else { 'Green' }
+        $pad = if ($num -lt 10) { "[$num]  " } else { "[$num] " }
+        Write-Host "   $pad" -NoNewline -ForegroundColor $col
+        Write-Host $e.Label
+    }
     Write-Host ""
-    Write-Host "  ━━ Программы ━━" -ForegroundColor DarkCyan
-    Write-Host "   [5]  " -NoNewline -ForegroundColor Green; Write-Host "Установить программы (галочками)"
-    Write-Host "   [6]  " -NoNewline -ForegroundColor Green; Write-Host "Обновить весь софт (winget upgrade)"
-    Write-Host "   [7]  " -NoNewline -ForegroundColor Green; Write-Host "Утилиты: WinUtil / Win11Debloat / Sophia"
-    Write-Host "   [8]  " -NoNewline -ForegroundColor Green; Write-Host "Библиотеки и среды выполнения (галочками)"
+    Write-Host "   [A]  " -NoNewline -ForegroundColor Yellow; Write-Host "Перезапустить от имени администратора"
+    Write-Host "   [0]  " -NoNewline -ForegroundColor Red;    Write-Host "Выход"
     Write-Host ""
-    Write-Host "  ━━ Обслуживание Windows ━━" -ForegroundColor DarkCyan
-    Write-Host "   [9]  " -NoNewline -ForegroundColor Green; Write-Host "Лёгкая чистка (лишнее + TEMP + DNS)"
-    Write-Host "   [10] " -NoNewline -ForegroundColor Green; Write-Host "Базовые твики (расширения, тёмная тема, меню)"
-    Write-Host "   [11] " -NoNewline -ForegroundColor Green; Write-Host "Проверка/восстановление системы (DISM + SFC)"
-    Write-Host "   [12] " -NoNewline -ForegroundColor Green; Write-Host "Обновление драйверов (Dell/HP/Lenovo/Intel)"
-    Write-Host ""
-    Write-Host "  ━━ Установка и активация ━━" -ForegroundColor DarkCyan
-    Write-Host "   [13] " -NoNewline -ForegroundColor Green;   Write-Host "MAS — активация Windows / Office"
-    Write-Host "   [14] " -NoNewline -ForegroundColor Magenta; Write-Host "Новый ПК — первичная настройка"
-    Write-Host ""
-    Write-Host "   [A]  " -NoNewline -ForegroundColor Yellow;  Write-Host "Перезапустить от имени администратора"
-    Write-Host "   [0]  " -NoNewline -ForegroundColor Red;     Write-Host "Выход"
-    Write-Host ""
+    return $map
 }
 
 do {
-    Show-Menu
+    $map = Show-Menu
     $choice = (Read-Host "  Выбор").Trim().ToUpper()
-    switch ($choice) {
-        '1'  { Show-PCInfo;         Wait-Continue }
-        '2'  { Show-NetworkMenu }
-        '3'  { Show-StorageCalc; Wait-Continue }
-        '4'  { Invoke-Remote 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/scripts/stresstest.ps1'; Wait-Continue }
-        '5'  { Show-ProgramMenu }
-        '6'  {
-            if ($HasWinget) {
-                Write-Host "`n   Обновление всего установленного софта..." -ForegroundColor Green
-                winget upgrade --all --include-unknown --accept-package-agreements --accept-source-agreements
-            } else { Write-Host "`n   winget не найден." -ForegroundColor Yellow }
-            Wait-Continue
-        }
-        '7'  { Show-UtilityMenu }
-        '8'  { Show-RuntimeMenu }
-        '9'  { Invoke-LightClean;   Wait-Continue }
-        '10' { Invoke-LightTweak;   Wait-Continue }
-        '11' { Repair-System;       Wait-Continue }
-        '12' { Invoke-DriverUpdate; Wait-Continue }
-        '13' { Invoke-Remote 'https://get.activated.win'; Wait-Continue }   # MAS
-        '14' { Invoke-NewPC;        Wait-Continue }
-        'A'  { Invoke-AdminRestart }
-        '0'  { }
-        default { Write-Host "`n  Неверный выбор." -ForegroundColor Yellow; Start-Sleep 1 }
+    if ($choice -eq '0') { break }
+    if ($choice -eq 'A') { Invoke-AdminRestart; continue }
+    $item = $map[$choice]
+    if (-not $item) { Write-Host "`n  Неверный выбор." -ForegroundColor Yellow; Start-Sleep 1; continue }
+
+    if ($item.Admin -and -not (Test-Admin)) {
+        Write-Host "`n  Пункт «$($item.Label)» требует прав администратора." -ForegroundColor Yellow
+        if ((Read-Host "  Перезапустить меню от админа? (y/n)").Trim().ToLower() -eq 'y') { Invoke-AdminRestart }
     }
-} while ($choice -ne '0')
+    Write-Log "Запуск: $($item.Label)"
+    & $item.Action
+} while ($true)
 
 Write-Host "`n  Готово. До встречи!`n" -ForegroundColor Cyan

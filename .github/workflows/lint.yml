@@ -1,0 +1,43 @@
+name: Lint PowerShell
+
+# Все ПК тянут скрипт вживую с main — этот чек ловит битое ДО того, как оно
+# попадёт всем. Красный крест = не мержим.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+
+      - name: Syntax check (parse all .ps1)
+        shell: pwsh
+        run: |
+          $bad = $false
+          Get-ChildItem -Recurse -Filter *.ps1 | ForEach-Object {
+            $e = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$e)
+            if ($e) {
+              $bad = $true
+              Write-Host "::error::Syntax error in $($_.FullName)"
+              $e | ForEach-Object { Write-Host "  $($_.Message)" }
+            } else { Write-Host "OK: $($_.Name)" }
+          }
+          if ($bad) { exit 1 }
+
+      - name: PSScriptAnalyzer (errors fail, warnings informational)
+        shell: pwsh
+        run: |
+          $all = Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error, Warning
+          $errors = @($all | Where-Object Severity -eq 'Error')
+          $warns  = @($all | Where-Object Severity -eq 'Warning')
+          if ($warns)  { Write-Host "Warnings ($($warns.Count)):";  $warns  | Format-Table RuleName, ScriptName, Line, Message -AutoSize -Wrap }
+          if ($errors) { Write-Host "Errors ($($errors.Count)):";   $errors | Format-Table RuleName, ScriptName, Line, Message -AutoSize -Wrap; exit 1 }
+          Write-Host "No PSScriptAnalyzer errors."
