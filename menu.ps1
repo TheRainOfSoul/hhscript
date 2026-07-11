@@ -414,6 +414,12 @@ function Invoke-LightTweak {
     $theme  = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
     $search = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Search'
     $clsid  = 'HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32'
+    $expl   = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer'
+    $cab    = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\CabinetState'
+    $cdm    = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager'
+    $desk   = 'HKCU:\Control Panel\Desktop'
+    $vfx    = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects'
+    $wmet   = 'HKCU:\Control Panel\Desktop\WindowMetrics'
 
     $tweaks = @(
         @{ Label = 'Показывать расширения файлов';            Do = { Set-ItemProperty $adv -Name HideFileExt -Value 0 -ErrorAction SilentlyContinue } }
@@ -423,6 +429,32 @@ function Invoke-LightTweak {
         @{ Label = 'Отключить веб-поиск Bing в меню Пуск';    Do = { Set-ItemProperty $search -Name BingSearchEnabled -Value 0 -ErrorAction SilentlyContinue; Set-ItemProperty $search -Name CortanaConsent -Value 0 -ErrorAction SilentlyContinue } }
         @{ Label = 'Панель задач: значки слева (Win11)';      Do = { Set-ItemProperty $adv -Name TaskbarAl -Value 0 -ErrorAction SilentlyContinue } }
         @{ Label = 'Скрыть кнопку «Виджеты» (Win11)';         Do = { Set-ItemProperty $adv -Name TaskbarDa -Value 0 -ErrorAction SilentlyContinue } }
+        @{ Label = 'Проводник открывать на «Этот компьютер»'; Do = { Set-ItemProperty $adv -Name LaunchTo -Value 1 -ErrorAction SilentlyContinue } }
+        @{ Label = 'Полный путь в заголовке проводника';      Do = { New-Item -Path $cab -Force | Out-Null; Set-ItemProperty $cab -Name FullPath -Value 1 -ErrorAction SilentlyContinue } }
+        @{ Label = 'Секунды в часах панели задач';            Do = { Set-ItemProperty $adv -Name ShowSecondsInSystemClock -Value 1 -ErrorAction SilentlyContinue } }
+        @{ Label = 'Убрать поиск с панели задач (Win11)';     Do = { Set-ItemProperty $search -Name SearchboxTaskbarMode -Value 0 -ErrorAction SilentlyContinue } }
+        @{ Label = 'Скрыть кнопку «Чат» (Win11)';             Do = { Set-ItemProperty $adv -Name TaskbarMn -Value 0 -ErrorAction SilentlyContinue } }
+        @{ Label = 'Чистый «Быстрый доступ» (без недавних)';  Do = { Set-ItemProperty $expl -Name ShowRecent -Value 0 -ErrorAction SilentlyContinue; Set-ItemProperty $expl -Name ShowFrequent -Value 0 -ErrorAction SilentlyContinue } }
+        @{ Label = 'Отключить прозрачность';                  Do = { Set-ItemProperty $theme -Name EnableTransparency -Value 0 -ErrorAction SilentlyContinue } }
+        @{ Label = 'Убрать рекомендации/рекламу Windows';     Do = {
+                Set-ItemProperty $adv -Name Start_IrisRecommendations -Value 0 -ErrorAction SilentlyContinue
+                foreach ($n in 'SubscribedContent-338388Enabled', 'SubscribedContent-338389Enabled', 'SubscribedContent-353694Enabled', 'SystemPaneSuggestionsEnabled', 'SilentInstalledAppsEnabled') {
+                    Set-ItemProperty $cdm -Name $n -Value 0 -ErrorAction SilentlyContinue
+                }
+            } }
+        @{ Label = 'Эффекты: быстродействие (кроме шрифтов/эскизов/перетаскивания)'; Do = {
+                Set-ItemProperty $vfx  -Name VisualFXSetting -Value 3 -Type DWord -ErrorAction SilentlyContinue
+                Set-ItemProperty $desk -Name UserPreferencesMask -Value ([byte[]](0x90, 0x12, 0x03, 0x80, 0x10, 0x00, 0x00, 0x00)) -Type Binary -ErrorAction SilentlyContinue
+                Set-ItemProperty $wmet -Name MinAnimate -Value '0' -Type String -ErrorAction SilentlyContinue
+                Set-ItemProperty $adv  -Name ListviewAlphaSelect -Value 0 -ErrorAction SilentlyContinue
+                Set-ItemProperty $adv  -Name ListviewShadow -Value 0 -ErrorAction SilentlyContinue
+                Set-ItemProperty $adv  -Name TaskbarAnimations -Value 0 -ErrorAction SilentlyContinue
+                # исключения — оставляем включёнными:
+                Set-ItemProperty $desk -Name DragFullWindows -Value '1' -Type String -ErrorAction SilentlyContinue    # содержимое окна при перетаскивании
+                Set-ItemProperty $desk -Name FontSmoothing -Value '2' -Type String -ErrorAction SilentlyContinue      # сглаживание шрифтов
+                Set-ItemProperty $desk -Name FontSmoothingType -Value 2 -Type DWord -ErrorAction SilentlyContinue
+                Set-ItemProperty $adv  -Name IconsOnly -Value 0 -ErrorAction SilentlyContinue                         # эскизы вместо значков
+            } }
     )
 
     $sel = Show-CheckList 'Базовые твики — отметь пункты' @($tweaks | ForEach-Object { $_.Label })
@@ -438,7 +470,7 @@ function Invoke-LightTweak {
     Write-Host "`n   Перезапуск проводника для применения..." -ForegroundColor DarkGray
     Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
     Start-Process explorer
-    Write-Host "   Готово." -ForegroundColor Green
+    Write-Host "   Готово. Часть эффектов применится после перезахода в систему." -ForegroundColor Green
 }
 
 # =====================================================================
