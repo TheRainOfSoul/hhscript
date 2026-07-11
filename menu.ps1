@@ -32,6 +32,7 @@ $Programs = @(
     @{ Name = 'OCCT (стресс-тест)';   Winget = 'OCBase.OCCT.Personal';           Url = 'https://www.ocbase.com/' }
     @{ Name = 'FurMark (стресс GPU)'; Winget = 'Geeks3D.FurMark.2';              Url = 'https://geeks3d.com/furmark/' }
     @{ Name = 'CrystalDiskMark';      Winget = 'CrystalDewWorld.CrystalDiskMark'; Url = 'https://crystalmark.info/en/software/crystaldiskmark/' }
+    @{ Name = 'Rufus (загруз. USB)';  Winget = 'Rufus.Rufus';                    Url = 'https://rufus.ie/' }
     @{ Name = 'Glow (анализ системы)'; Winget = '';                               Url = 'https://github.com/turkaysoft/glow/releases' }
     # --- Dahua: пакетов winget нет, открывается официальная страница загрузки в браузере.
     #     Если ссылка устареет — обнови URL со страницы support.dahuasecurity.com -> Tools.
