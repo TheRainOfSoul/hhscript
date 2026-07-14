@@ -31,7 +31,8 @@ irm https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/menu.ps1 | iex
   браузер/архиватор (Chrome, 7-Zip, VLC, qBittorrent, Notepad++), удалёнка
   (AnyDesk, TightVNC, mRemoteNG, MobaXterm), сеть (Advanced/Angry IP Scanner,
   Nmap, Wireshark, Winbox, PuTTY, WinSCP, Speedtest CLI), система/диски
-  (Sysinternals, HWiNFO, CrystalDiskInfo/Mark, WizTree, Everything, Glow), стресс
+  (Sysinternals, HWiNFO, CrystalDiskInfo/Mark, DiskGenius, TestDisk+PhotoRec,
+  WizTree, Everything, Glow), стресс
   (OCCT, FurMark), USB (Rufus, Ventoy), безопасность (Malwarebytes, KeePassXC),
   оболочка (PowerShell 7, Windows Terminal) — через `winget`; плюс CCTV
   (Dahua ConfigTool/SmartPSS, Hikvision SADP/HiTools Delivery/iVMS-4200) —

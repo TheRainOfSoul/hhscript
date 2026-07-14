@@ -46,6 +46,8 @@ $Programs = @(
     @{ Name = 'HWiNFO (мониторинг)';  Winget = 'REALiX.HWiNFO';                   Url = 'https://www.hwinfo.com/download/' }
     @{ Name = 'CrystalDiskInfo';      Winget = 'CrystalDewWorld.CrystalDiskInfo'; Url = 'https://crystalmark.info/en/software/crystaldiskinfo/' }
     @{ Name = 'CrystalDiskMark';      Winget = 'CrystalDewWorld.CrystalDiskMark'; Url = 'https://crystalmark.info/en/software/crystaldiskmark/' }
+    @{ Name = 'DiskGenius (разделы/восстановление)'; Winget = 'Eassos.DiskGenius'; Url = 'https://www.diskgenius.com/download.php' }
+    @{ Name = 'TestDisk + PhotoRec (восстановление)'; Winget = 'CGSecurity.TestDisk'; Url = 'https://www.cgsecurity.org/wiki/TestDisk_Download' }
     @{ Name = 'WizTree (диск)';       Winget = 'AntibodySoftware.WizTree';        Url = 'https://diskanalyzer.com/download' }
     @{ Name = 'Everything (поиск)';   Winget = 'voidtools.Everything';            Url = 'https://www.voidtools.com/downloads/' }
     @{ Name = 'Glow (анализ системы)'; Winget = '';                               Url = 'https://github.com/turkaysoft/glow/releases' }
