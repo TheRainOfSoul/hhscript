@@ -70,6 +70,22 @@ irm https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/menu.ps1 | iex
   Sophia Script (PowerShell): debloat и твики известными инструментами.
 - Перезапуск от имени администратора, выход
 
+## GUI (WinForms)
+
+```powershell
+irm https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/gui.ps1 | iex
+```
+
+Окно строится из **тех же данных**: `gui.ps1` грузит `menu.ps1` с `$SkipCliMenu = $true`
+(только данные и функции, без консольного меню) и подменяет `Show-CheckList` на
+оконный список — `ListView` с галочками и группами. Поэтому все чек-листы
+(программы, библиотеки, твики, чистка) становятся оконными без правок в их функциях.
+
+Ограничения 1-го этапа:
+- вывод выполнения (winget, DISM/SFC, MAS, WinUtil) идёт в **консоль позади окна**;
+- пункты с вводом (калькулятор диска, сетевые утилиты) пока спрашивают значения в консоли;
+- нужен **Windows PowerShell (STA)** и графическая сессия. По SSH/Server Core — CLI-версия.
+
 ## Как менять под себя
 
 - **Пункт меню** — одна строка в массив `$Menu` (data-driven):

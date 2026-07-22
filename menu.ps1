@@ -1083,20 +1083,24 @@ function Show-Menu {
     return $map
 }
 
-do {
-    $map = Show-Menu
-    $choice = (Read-Host "  Выбор").Trim().ToUpper()
-    if ($choice -eq '0') { break }
-    if ($choice -eq 'A') { Invoke-AdminRestart; continue }
-    $item = $map[$choice]
-    if (-not $item) { Write-Host "`n  Неверный выбор." -ForegroundColor Yellow; Start-Sleep 1; continue }
+# Консольное меню. GUI (gui.ps1) выставляет $SkipCliMenu = $true, чтобы загрузить
+# только данные и функции этого файла, не запуская консольный цикл.
+if (-not $SkipCliMenu) {
+    do {
+        $map = Show-Menu
+        $choice = (Read-Host "  Выбор").Trim().ToUpper()
+        if ($choice -eq '0') { break }
+        if ($choice -eq 'A') { Invoke-AdminRestart; continue }
+        $item = $map[$choice]
+        if (-not $item) { Write-Host "`n  Неверный выбор." -ForegroundColor Yellow; Start-Sleep 1; continue }
 
-    if ($item.Admin -and -not (Test-Admin)) {
-        Write-Host "`n  Пункт «$($item.Label)» требует прав администратора." -ForegroundColor Yellow
-        if ((Read-Host "  Перезапустить меню от админа? (y/n)").Trim().ToLower() -eq 'y') { Invoke-AdminRestart }
-    }
-    Write-Log "Запуск: $($item.Label)"
-    & $item.Action
-} while ($true)
+        if ($item.Admin -and -not (Test-Admin)) {
+            Write-Host "`n  Пункт «$($item.Label)» требует прав администратора." -ForegroundColor Yellow
+            if ((Read-Host "  Перезапустить меню от админа? (y/n)").Trim().ToLower() -eq 'y') { Invoke-AdminRestart }
+        }
+        Write-Log "Запуск: $($item.Label)"
+        & $item.Action
+    } while ($true)
 
-Write-Host "`n  Готово. До встречи!`n" -ForegroundColor Cyan
+    Write-Host "`n  Готово. До встречи!`n" -ForegroundColor Cyan
+}
