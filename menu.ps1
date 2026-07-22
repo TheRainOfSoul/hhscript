@@ -162,8 +162,11 @@ function Get-YadiskFile {
         if (-not $Name) { $Name = (Invoke-RestMethod -Uri "https://cloud-api.yandex.net/v1/disk/public/resources?public_key=$enc").name }
         $href = (Invoke-RestMethod -Uri "https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=$enc").href
         $out  = Join-Path ([Environment]::GetFolderPath('UserProfile')) "Downloads\$Name"
-        Write-Host "   Скачивание '$Name'..." -ForegroundColor DarkGray
-        Invoke-WebRequest -Uri $href -OutFile $out
+        Write-Host "   Скачивание '$Name' (несколько секунд)..." -ForegroundColor DarkGray
+        # WebClient, а не Invoke-WebRequest: у IWR в PS 5.1 прогресс-бар тормозит
+        # скачивание в разы. WebClient качает на полной скорости.
+        $wc = New-Object System.Net.WebClient
+        try { $wc.DownloadFile($href, $out) } finally { $wc.Dispose() }
         Write-Host "   Сохранено: $out — запускаю." -ForegroundColor Green
         Start-Process $out
         return $true
