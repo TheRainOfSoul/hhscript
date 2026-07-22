@@ -64,7 +64,7 @@ $Programs = @(
     @{ Group = 'Оболочка'; Name = 'PowerShell 7';         Winget = 'Microsoft.PowerShell';            Url = 'https://github.com/PowerShell/PowerShell/releases' }
     @{ Name = 'Windows Terminal';     Winget = 'Microsoft.WindowsTerminal';       Url = 'https://github.com/microsoft/terminal/releases' }
     # --- CCTV (в winget нет — открывается официальная страница загрузки) ---
-    @{ Group = 'CCTV (открывается сайтом)'; Name = 'Dahua ConfigTool'; Winget = '';  Url = 'https://support.dahuasecurity.com/en/toolsDownloadDetails?IsDpValue=Q93jdSLr94chjRuQ1y%2FcQQ%3D%3D' }
+    @{ Group = 'CCTV'; Name = 'Dahua ConfigTool'; Yadisk = 'https://disk.yandex.ru/d/c-K3fF2PNXBOmQ' }
     @{ Name = 'Dahua SmartPSS Lite';  Winget = '';  Url = 'https://support.dahuasecurity.com/en/toolsDownloadDetails?IsDpValue=Azcw9DN0IRfyUn9i%2Fvq6qA%3D%3D' }
     @{ Name = 'SADP (Hikvision)';     Winget = '';  Url = 'https://www.hikvision.com/en/support/tools/hitools/clc14d7e1a69a237dd/' }
     @{ Name = 'HiTools Delivery (Hikvision)'; Winget = ''; Url = 'https://www.hikvision.com/en/support/tools/hitools/cl7f0143d2c781a3e3/' }
@@ -129,6 +129,10 @@ function Install-Item {
         DISM /Online /Enable-Feature /FeatureName:NetFx3 /All /NoRestart | Out-Null
         return ($LASTEXITCODE -eq 0)
     }
+    if ($p.Yadisk) {
+        Write-Host "`n   '$($p.Name)' — загрузка с Яндекс.Диска..." -ForegroundColor Green
+        return (Get-YadiskFile -PublicUrl $p.Yadisk -Name $p.File)
+    }
     $ids = if ($p.WingetList) { $p.WingetList } elseif ($p.Winget) { @($p.Winget) } else { @() }
     if ($ids.Count -and $HasWinget) {
         $ok = $true
@@ -147,6 +151,26 @@ function Install-Item {
     }
     Write-Host "`n   Нет данных для установки '$($p.Name)'." -ForegroundColor Red
     return $false
+}
+
+# Скачать и запустить файл по публичной ссылке Яндекс.Диска. Свежая прямая
+# ссылка берётся через публичный API (не протухает, авторизация не нужна).
+function Get-YadiskFile {
+    param([string]$PublicUrl, [string]$Name)
+    try {
+        $enc = [uri]::EscapeDataString($PublicUrl)
+        if (-not $Name) { $Name = (Invoke-RestMethod -Uri "https://cloud-api.yandex.net/v1/disk/public/resources?public_key=$enc").name }
+        $href = (Invoke-RestMethod -Uri "https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=$enc").href
+        $out  = Join-Path ([Environment]::GetFolderPath('UserProfile')) "Downloads\$Name"
+        Write-Host "   Скачивание '$Name'..." -ForegroundColor DarkGray
+        Invoke-WebRequest -Uri $href -OutFile $out
+        Write-Host "   Сохранено: $out — запускаю." -ForegroundColor Green
+        Start-Process $out
+        return $true
+    } catch {
+        Write-Host "   Ошибка загрузки с Яндекс.Диска: $($_.Exception.Message)" -ForegroundColor Red
+        return $false
+    }
 }
 
 # Лог действий в файл (для истории/акта на объекте).
@@ -481,7 +505,9 @@ function Invoke-LightTweak {
 function Show-ProgramMenu {
     # Метки: пункты без winget откроют сайт загрузки — помечаем «(сайт)»
     $labels = @($Programs | ForEach-Object {
-        if ($HasWinget -and $_.Winget) { $_.Name } else { $_.Name + '  (сайт)' }
+        if ($HasWinget -and $_.Winget) { $_.Name }
+        elseif ($_.Yadisk) { $_.Name + '  (Я.Диск)' }
+        else { $_.Name + '  (сайт)' }
     })
     # Заголовки групп: у стартовой записи каждой группы задано поле Group
     $headers = @{}
