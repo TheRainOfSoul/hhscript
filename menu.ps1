@@ -218,8 +218,8 @@ function Write-Box {
 }
 
 function Write-Kv {
-    param([string]$Key, [string]$Value)
-    Write-Host ("   {0,-16}" -f $Key) -NoNewline -ForegroundColor Gray
+    param([string]$Key, [string]$Value, [int]$Width = 16)
+    Write-Host ("   {0,-$Width}" -f $Key) -NoNewline -ForegroundColor Gray
     Write-Host $Value -ForegroundColor White
 }
 
@@ -816,65 +816,160 @@ function Read-Number {
     return $Default
 }
 
-function Read-CamBitrate {
-    # Возвращает битрейт в Kbps (как поле Bit Rate у Dahua).
-    Write-Host "   Битрейт: [1] по разрешению+кодеку   [2] ввести вручную (Kbps)" -ForegroundColor Gray
-    if ((Read-Host "   Выбор [1]").Trim() -eq '2') { return Read-Number 'Битрейт, Kbps' 4096 }
-
-    Write-Host "   Разрешение:" -ForegroundColor Gray
-    Write-Host "    [1] 2 МП / 1080p   [2] 4 МП   [3] 5 МП   [4] 6 МП   [5] 8 МП / 4K"
-    switch ((Read-Host "   Выбор [1]").Trim()) {   # база — H.264, Kbps
-        '2'     { $h264 = 6144 }
-        '3'     { $h264 = 8192 }
-        '4'     { $h264 = 10240 }
-        '5'     { $h264 = 12288 }
-        default { $h264 = 4096 }
-    }
-    Write-Host "   Кодек: [1] H.264   [2] H.265 (x0.5)   [3] H.265+ (x0.25)" -ForegroundColor Gray
-    switch ((Read-Host "   Выбор [1]").Trim()) {
-        '2'     { return [math]::Round($h264 / 2) }
-        '3'     { return [math]::Round($h264 / 4) }
-        default { return $h264 }
+function Read-NumberInRange {
+    param([string]$Prompt, [double]$Default, [double]$Min, [double]$Max)
+    while ($true) {
+        $v = Read-Number $Prompt $Default
+        if ($v -ge $Min -and $v -le $Max) { return $v }
+        Write-Host ("   Допустимо {0}-{1} — повтори." -f $Min, $Max) -ForegroundColor DarkYellow
     }
 }
 
+function Read-Option {
+    param([string]$Prompt, [string[]]$Options, [int]$DefaultIndex = 0)
+    Write-Host "   $Prompt" -ForegroundColor Gray
+    $line = ''
+    for ($i = 0; $i -lt $Options.Count; $i++) {
+        $line += ('[{0}] {1}   ' -f ($i + 1), $Options[$i])
+        if (($i + 1) % 4 -eq 0) { Write-Host "    $line"; $line = '' }
+    }
+    if ($line -ne '') { Write-Host "    $line" }
+    $in = (Read-Host ("   Выбор [{0}]" -f ($DefaultIndex + 1))).Trim()
+    if ($in -eq '') { return $Options[$DefaultIndex] }
+    $n = 0
+    if ([int]::TryParse($in, [ref]$n) -and $n -ge 1 -and $n -le $Options.Count) { return $Options[$n - 1] }
+    Write-Host "   Неверный выбор — беру $($Options[$DefaultIndex])" -ForegroundColor DarkYellow
+    return $Options[$DefaultIndex]
+}
+
+# ---------------------------------------------------------------------
+#  Движок калькулятора Dahua Disk & Bandwidth (Basic Mode).
+#  Формулы сняты с официального калькулятора, а не подобраны:
+#  dhtools.dahuasecurity.com/DiskBandwidthCalculator/#/basic
+# ---------------------------------------------------------------------
+$script:DahuaBase = [ordered]@{      # базовый битрейт по разрешению, Kbps
+    'D1' = 1024; '720P' = 2048; '960P' = 2048; '1080P' = 4096; '3MP' = 4096; '4MP' = 5120
+    '5MP' = 6144; '6MP' = 6144; '8MP' = 8192; '9MP' = 8192; '12MP' = 12288
+}
+$script:DahuaMin = @{                # минимальный битрейт по разрешению, Kbps
+    'D1' = 128; '720P' = 384; '960P' = 384; '1080P' = 384; '3MP' = 640; '4MP' = 768
+    '5MP' = 1024; '6MP' = 1152; '8MP' = 1536; '9MP' = 1536; '12MP' = 2304
+}
+
+function Get-DahuaBitRate {
+    param(
+        [string]$Resolution,
+        [double]$FrameRate,
+        [string]$VideoStandard = 'PAL',
+        [string]$Compression   = 'H.264',
+        [double]$Environment   = 0.5
+    )
+    $base = $script:DahuaBase[$Resolution]
+    if (-not $base) { return 0 }
+
+    $n = if ($VideoStandard -eq 'NTSC') { 30 } else { 25 }   # опорная частота стандарта
+    $s = $FrameRate
+    if ($Resolution -in @('D1', 'VGA', 'CIF')) { $s = [math]::Min([double]$FrameRate, [double]$n) }
+
+    $u = [math]::Pow(0.8, 1 / ($n - 1))
+    $m = $base / 6.4                                          # 6.4 = 8 * 0.8
+    $f = 20 * $m / (9 + 2 * $n)
+    $g = $f / 10
+
+    if ($s -ge 25 -and $s -le 30) {
+        $b = $f / 2 + $g * $n - $g / 2
+        $d = 0.8                                              # == u^(n-1)
+    } else {
+        $b = $f / 2 + $g * $s - $g / 2
+        $d = [math]::Pow($u, $s - 1)
+    }
+    $m = 8 * $b * $d
+
+    switch ($Compression) {
+        'H.265'       { $m = $m / 2 }
+        'SmartH.264+' { $m = $m * $Environment }
+        'SmartH.265+' { $m = $m / 2 * $Environment }
+    }
+    # округление вверх до кратного 256 — оригинал делает (m + 255) & ~255
+    return [int](([int][math]::Truncate($m) + 255) -band -256)
+}
+
+function Get-DahuaStorageKB {
+    param([double]$BitRateKbps, [double]$HoursPerDay, [double]$Days)
+    return $BitRateKbps * $HoursPerDay * $Days * 3600 / 8 / 0.9   # 0.9 — заложенный Dahua запас 10%
+}
+
+function Get-DahuaDays {
+    param([double]$BitRateKbps, [double]$HoursPerDay, [double]$DiskKB)
+    if ($BitRateKbps -le 0 -or $HoursPerDay -le 0) { return 0 }
+    return [int][math]::Floor($DiskKB * 0.9 * 8 / $BitRateKbps / 3600 / $HoursPerDay)
+}
+
+function Format-DahuaSize {
+    # Единицы как на сайте: деление на 1024 и округление вверх до 0.1.
+    param([double]$Value, [switch]$Bandwidth)
+    $units = if ($Bandwidth) { @('Kbps', 'Mbps', 'Gbps', 'Tbps', 'Pbps', 'Ebps') }
+             else            { @('KB', 'MB', 'GB', 'TB', 'PB', 'EB') }
+    $i = 0
+    while ($Value -gt 1024 -and $i -lt 5) { $Value = $Value / 1024; $i++ }
+    $v = [math]::Ceiling($Value * 10) / 10
+    return ([string]::Format([Globalization.CultureInfo]::InvariantCulture, '{0:0.#} {1}', $v, $units[$i]))
+}
+
 function Show-StorageCalc {
-    Write-Box 'Калькулятор диска (модель Dahua)' 'Cyan'
-    $cams  = Read-Number 'Кол-во камер (каналов)' 1
-    $kbps  = Read-CamBitrate
-    $hours = Read-Number 'Часов записи в сутки (24 = круглосуточно)' 24
-    $factor = 1.0
-    if ((Read-Host "   Запись: [1] постоянно (по умолч.)  [2] по движению").Trim() -eq '2') {
-        $factor = (Read-Number 'Активность, %' 30) / 100.0
+    Write-Box 'Калькулятор диска Dahua (Basic)' 'Cyan'
+
+    $channels = [int](Read-NumberInRange 'Кол-во каналов' 1 1 1024)
+    $std      = Read-Option 'Стандарт:'   @('PAL', 'NTSC') 0
+    $res      = Read-Option 'Разрешение:' @($script:DahuaBase.Keys) 3
+    $codec    = Read-Option 'Кодек:'      @('H.264', 'H.265', 'SmartH.264+', 'SmartH.265+') 1
+
+    $envFactor = 0.5
+    if ($codec -like 'Smart*') {                     # на прочие кодеки сцена не влияет
+        $envName   = Read-Option 'Сцена (environment):' @('Low', 'Medium', 'High') 1
+        $envFactor = @{ 'Low' = 0.25; 'Medium' = 0.5; 'High' = 1.0 }[$envName]
     }
 
-    $mbps     = $kbps / 1000.0
-    $K        = 0.476875                            # ГБ на (Mbps*ч) — как у Dahua (~10% запас + бинарный ГБ)
-    $gbCamDay = $mbps * $K * $hours * $factor         # ГБ/сутки на камеру
-    $gbAllDay = $gbCamDay * $cams                      # ГБ/сутки всего
-    $bwMbps   = $mbps * $cams                           # суммарный битрейт (Bandwidth)
-    if ($gbAllDay -le 0) { Write-Host "`n   Некорректные данные." -ForegroundColor Red; return }
+    $stdFps = if ($std -eq 'NTSC') { 30 } else { 25 }
+    $fps    = [int](Read-NumberInRange 'Кадров в секунду' $stdFps 1 60)
+
+    $auto = Get-DahuaBitRate -Resolution $res -FrameRate $fps -VideoStandard $std `
+                             -Compression $codec -Environment $envFactor
+    Write-Host ("   Расчётный битрейт: {0} Kbps" -f $auto) -ForegroundColor DarkGray
+    $kbps = [int](Read-NumberInRange 'Битрейт, Kbps (Enter — принять)' $auto 1 65536)
+    $min  = $script:DahuaMin[$res]
+    if ($kbps -lt $min) {
+        Write-Host ("   Ниже минимума Dahua для {0} ({1} Kbps) — считаю как есть." -f $res, $min) -ForegroundColor Yellow
+    }
+
+    $hours = Read-NumberInRange 'Часов записи в сутки' 24 1 24
+    $sum   = [double]$kbps * $channels               # суммарный битрейт всех каналов = Bandwidth
 
     Write-Host "`n   Что посчитать:" -ForegroundColor Gray
-    Write-Host "    [1] Сколько диска нужно на N дней   [по умолч.]"
+    Write-Host "    [1] Объём диска на N дней   [по умолч.]"
     Write-Host "    [2] На сколько дней хватит диска"
     $mode = (Read-Host "   Выбор [1]").Trim()
-    if ($mode -eq '2') { $tb = Read-Number 'Объём диска, ТБ' 4 }
-    else               { $days = Read-Number 'Срок хранения, дней' 30 }
+
+    if ($mode -eq '2') {
+        $unit   = Read-Option 'Единица объёма:' @('TB', 'GB') 0
+        $size   = Read-NumberInRange "Объём диска, $unit" 4 0.1 100000
+        $diskKB = if ($unit -eq 'TB') { $size * 1024 * 1024 * 1024 } else { $size * 1024 * 1024 }
+        $result = '{0} Days' -f (Get-DahuaDays -BitRateKbps $sum -HoursPerDay $hours -DiskKB $diskKB)
+        $label  = 'Storage Time'
+    } else {
+        $days   = Read-NumberInRange 'Срок хранения, дней' 30 1 3650
+        $result = Format-DahuaSize (Get-DahuaStorageKB -BitRateKbps $sum -HoursPerDay $hours -Days $days)
+        $label  = 'Required Disk Space'
+    }
 
     Write-Host ""
-    Write-Kv 'Битрейт/камера:' ("{0:N0} Kbps ({1:N2} Mbps)" -f $kbps, $mbps)
-    Write-Kv 'Bandwidth:'      ("{0:N1} Mbps (всего по {1:N0} камерам)" -f $bwMbps, $cams)
-    Write-Kv 'Расход:'         ("{0:N1} ГБ/сутки/камера, {1:N1} ГБ/сутки всего" -f $gbCamDay, $gbAllDay)
-    if ($mode -eq '2') {
-        $d = [math]::Floor(($tb * 1024) / $gbAllDay)
-        Write-Kv 'Хватит на:'   ("{0:N0} дней  (~{1:N1} мес.)" -f $d, ($d / 30))
-    } else {
-        $gb = $gbAllDay * $days
-        Write-Kv 'Нужно диска:' ("{0:N1} ГБ  (~{1:N2} ТБ)" -f $gb, ($gb / 1024))
-    }
-    Write-Host "`n   Коэффициент и запас как в калькуляторе Dahua (~10% + бинарный ТБ)." -ForegroundColor DarkGray
-    Write-Host "   Реальные цифры зависят от сцены и кодека." -ForegroundColor DarkGray
+    Write-Kv 'Channels'  ([string]$channels)                    21
+    Write-Kv 'Bandwidth' (Format-DahuaSize $sum -Bandwidth)     21
+    Write-Kv $label      $result                                21
+    Write-Kv 'Параметры' ("{0}, {1}, {2}, {3} fps, {4} Kbps/канал, {5} ч/сутки" -f
+                          $res, $codec, $std, $fps, $kbps, $hours) 21
+    Write-Host "`n   Объём — без учёта RAID: покупаемая ёмкость должна быть больше." -ForegroundColor DarkGray
+    Write-Host "   Формулы и запас 10% — как в калькуляторе Dahua." -ForegroundColor DarkGray
 }
 
 # =====================================================================
@@ -937,7 +1032,7 @@ $Menu = @(
     @{ Section = 'Диагностика и сеть' }
     @{ Label = 'Информация о ПК';                                 Action = { Show-PCInfo; Wait-Continue } }
     @{ Label = 'Сетевые утилиты (DNS, ping, сброс сети)';         Action = { Show-NetworkMenu } }
-    @{ Label = 'Калькулятор диска для камер (модель Dahua)';      Action = { Show-StorageCalc; Wait-Continue } }
+    @{ Label = 'Калькулятор диска и полосы (клон Dahua Basic)';   Action = { Show-StorageCalc; Wait-Continue } }
     @{ Label = 'Стресс-тест ПК (CPU-прожиг + OCCT/FurMark/диск)'; Action = { Invoke-Remote 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/scripts/stresstest.ps1'; Wait-Continue } }
     @{ Section = 'Программы' }
     @{ Label = 'Установить программы (галочками)';                Action = { Show-ProgramMenu } }
