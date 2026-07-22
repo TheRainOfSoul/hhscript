@@ -34,10 +34,9 @@ irm https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/menu.ps1 | iex
   (Sysinternals, HWiNFO, CrystalDiskInfo/Mark, DiskGenius, TestDisk+PhotoRec,
   WizTree, Everything, Glow), стресс
   (OCCT, FurMark), USB (Rufus, Ventoy), безопасность (Malwarebytes, KeePassXC),
-  оболочка (PowerShell 7, Windows Terminal) — через `winget`; плюс CCTV: Dahua
-  ConfigTool (авто-загрузка с Я.Диска через публичный API), Dahua SmartPSS,
-  Hikvision SADP/HiTools Delivery/iVMS-4200 (открываются официальной страницей).
-  Отдельный пункт **«Обновить весь софт»** (`winget upgrade --all`)
+  оболочка (PowerShell 7, Windows Terminal) — через `winget`; плюс CCTV (Dahua
+  ConfigTool/SmartPSS, Hikvision SADP/HiTools Delivery/iVMS-4200) — авто-загрузка
+  с Я.Диска через публичный API. Отдельный пункт **«Обновить весь софт»** (`winget upgrade --all`)
 - **[8] Библиотеки и среды выполнения** — чек-лист runtime (по умолчанию всё
   отмечено): Visual C++ Redist (все 2005-2022, x86+x64), .NET Desktop Runtime 8/6,
   .NET Framework 3.5 (DISM), DirectX, Edge WebView2, Windows App Runtime,

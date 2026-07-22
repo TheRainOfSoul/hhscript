@@ -65,10 +65,10 @@ $Programs = @(
     @{ Name = 'Windows Terminal';     Winget = 'Microsoft.WindowsTerminal';       Url = 'https://github.com/microsoft/terminal/releases' }
     # --- CCTV (в winget нет — открывается официальная страница загрузки) ---
     @{ Group = 'CCTV'; Name = 'Dahua ConfigTool'; Yadisk = 'https://disk.yandex.ru/d/c-K3fF2PNXBOmQ' }
-    @{ Name = 'Dahua SmartPSS Lite';  Winget = '';  Url = 'https://support.dahuasecurity.com/en/toolsDownloadDetails?IsDpValue=Azcw9DN0IRfyUn9i%2Fvq6qA%3D%3D' }
-    @{ Name = 'SADP (Hikvision)';     Winget = '';  Url = 'https://www.hikvision.com/en/support/tools/hitools/clc14d7e1a69a237dd/' }
-    @{ Name = 'HiTools Delivery (Hikvision)'; Winget = ''; Url = 'https://www.hikvision.com/en/support/tools/hitools/cl7f0143d2c781a3e3/' }
-    @{ Name = 'iVMS-4200 (Hikvision)'; Winget = ''; Url = 'https://www.hikvision.com/us-en/support/download/software/ivms4200-series/' }
+    @{ Name = 'Dahua SmartPSS Lite';  Yadisk = 'https://disk.yandex.ru/d/5B04_1OvSR7ChQ' }
+    @{ Name = 'SADP (Hikvision)';     Yadisk = 'https://disk.yandex.ru/d/E8HX0NivegXgRQ' }
+    @{ Name = 'HiTools Delivery (Hikvision)'; Yadisk = 'https://disk.yandex.ru/d/3LJjK0CS-HZqwQ' }
+    @{ Name = 'iVMS-4200 (Hikvision)'; Yadisk = 'https://disk.yandex.ru/d/U8nd7S3DwH8mtw' }
 )
 
 # =====================================================================
