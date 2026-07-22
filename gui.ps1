@@ -26,14 +26,21 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
-# --- Загружаем ядро: данные ($Menu, $Programs, ...) и функции, без CLI-меню ---
-$SkipCliMenu = $true
-try {
-    Invoke-Expression (Invoke-RestMethod -Uri $MenuUrl)
-} catch {
-    [void][System.Windows.Forms.MessageBox]::Show(
-        "Не удалось загрузить menu.ps1:`n$($_.Exception.Message)", 'HH Toolbox', 'OK', 'Error')
-    return
+# --- Ядро: данные ($Menu, $Programs, ...) и функции из menu.ps1 ---
+# Если gui.ps1 вызван из menu.ps1, всё уже загружено — повторно не тянем
+# (иначе получилась бы циклическая загрузка).
+if (-not $Menu) {
+    # $SkipCliMenu читается кодом menu.ps1, который грузится через iex ниже.
+    # Задаём через Set-Variable: обычное присваивание PSScriptAnalyzer считает
+    # «переменная назначена, но не используется» (чтения через iex он не видит).
+    Set-Variable -Name SkipCliMenu -Value $true
+    try {
+        Invoke-Expression (Invoke-RestMethod -Uri $MenuUrl)
+    } catch {
+        [void][System.Windows.Forms.MessageBox]::Show(
+            "Не удалось загрузить menu.ps1:`n$($_.Exception.Message)", 'HH Toolbox', 'OK', 'Error')
+        return
+    }
 }
 
 # =====================================================================
@@ -462,3 +469,8 @@ function Install-Item {
 }
 
 Show-GuiMain
+
+# Флаг для menu.ps1: окно отработало — консольное меню не нужно. Ставим ПОСЛЕ
+# показа окна: если GUI упадёт, флаг останется $false и menu.ps1 откроет консоль.
+# Через Set-Variable: читает его вызывающий скрипт, PSScriptAnalyzer этого не видит.
+Set-Variable -Name GuiStarted -Value $true

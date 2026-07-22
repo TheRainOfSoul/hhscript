@@ -5,6 +5,7 @@
 
 # --- Ссылка, по которой запускается это меню (для перезапуска от админа).
 $LauncherUrl = 'https://get.hhtdom.ru'
+$GuiUrl      = 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/gui.ps1'
 
 # --- Совместимость со старыми системами + кириллица ------------------
 try { [Net.ServicePointManager]::SecurityProtocol = `
@@ -1083,9 +1084,22 @@ function Show-Menu {
     return $map
 }
 
-# Консольное меню. GUI (gui.ps1) выставляет $SkipCliMenu = $true, чтобы загрузить
-# только данные и функции этого файла, не запуская консольный цикл.
+# По умолчанию открывается ОКОННЫЙ интерфейс (gui.ps1). Консольное меню —
+# только если GUI невозможен: не STA-поток (pwsh 7), нет рабочего стола
+# (SSH/Server Core) или ошибка загрузки. Принудительно консоль: $ForceCli = $true.
+# gui.ps1 выставляет $SkipCliMenu = $true, когда грузит этот файл ради данных.
 if (-not $SkipCliMenu) {
+    $GuiStarted = $false
+    if (-not $ForceCli -and [Threading.Thread]::CurrentThread.GetApartmentState() -eq 'STA') {
+        try { Invoke-Expression (Invoke-RestMethod -Uri $GuiUrl) }
+        catch {
+            Write-Host "`n  GUI не запустился ($($_.Exception.Message))." -ForegroundColor DarkYellow
+            Write-Host "  Открываю консольное меню.`n" -ForegroundColor DarkYellow
+        }
+    }
+}
+
+if (-not $SkipCliMenu -and -not $GuiStarted) {
     do {
         $map = Show-Menu
         $choice = (Read-Host "  Выбор").Trim().ToUpper()
