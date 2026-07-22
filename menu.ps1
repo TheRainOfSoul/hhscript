@@ -1097,6 +1097,8 @@ if (-not $SkipCliMenu) {
             Write-Host "  Открываю консольное меню.`n" -ForegroundColor DarkYellow
         }
     }
+    # Окно закрыли — закрываем и консольный сеанс, чтобы не оставалось лишнего окна.
+    if ($GuiStarted) { exit }
 }
 
 if (-not $SkipCliMenu -and -not $GuiStarted) {

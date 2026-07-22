@@ -240,9 +240,27 @@ function Show-GuiMain {
 
     $bar.Controls.AddRange(@($btnAdm, $btnExit, $chkCon))
 
+    # Встроенная «консоль»: сюда уходит весь вывод Write-Host из скрипта.
+    $log = New-Object System.Windows.Forms.TextBox
+    $log.Dock       = 'Bottom'
+    $log.Height     = 180
+    $log.Multiline  = $true
+    $log.ReadOnly   = $true
+    $log.ScrollBars = 'Vertical'
+    $log.BackColor  = [System.Drawing.Color]::FromArgb(30, 30, 30)
+    $log.ForeColor  = [System.Drawing.Color]::Gainsboro
+    $log.Font       = New-Object System.Drawing.Font('Consolas', 9)
+    $script:LogBox  = $log
+
+    $btnClr = New-Object System.Windows.Forms.Button
+    $btnClr.Text = 'Очистить лог'; $btnClr.Width = 120
+    $btnClr.Add_Click({ $log.Clear() }.GetNewClosure())
+    $bar.Controls.Add($btnClr)
+
     $form.Controls.Add($flow)   # Fill — первым
     $form.Controls.Add($head)   # Top
-    $form.Controls.Add($bar)    # Bottom
+    $form.Controls.Add($log)    # Bottom (над панелью кнопок)
+    $form.Controls.Add($bar)    # Bottom — последним, докается первым
     $form.CancelButton = $btnExit
 
     [void]$form.ShowDialog()
@@ -328,6 +346,11 @@ function Show-GuiStorageCalc {
     $f.Controls.AddRange(@($btnCalc, $btnClose))
     $f.CancelButton = $btnClose
 
+    # ВАЖНО: внутри .GetNewClosure() область $script: — это модуль замыкания, а не
+    # скрипт, поэтому $script:DahuaMin там был бы $null. Берём локальную копию —
+    # она попадает в замыкание как обычная переменная.
+    $dahuaMin = $script:DahuaMin
+
     # Сцена влияет только на Smart-кодеки.
     $syncUi = { $cEnv.Enabled = ([string]$cCod.SelectedItem -like 'Smart*') }.GetNewClosure()
 
@@ -362,7 +385,7 @@ function Show-GuiStorageCalc {
                 $label  = 'Required Disk Space'
                 $result = Format-DahuaSize (Get-DahuaStorageKB -BitRateKbps $sum -HoursPerDay $hours -Days ([double]$nDays.Value))
             }
-            $min  = $script:DahuaMin[[string]$cRes.SelectedItem]
+            $min  = $dahuaMin[[string]$cRes.SelectedItem]
             $warn = if ($kbps -lt $min) { "`r`nВнимание: ниже минимума Dahua для $($cRes.SelectedItem) ($min Kbps)." } else { '' }
             $out.Text = (@(
                     ('Channels            : {0}' -f $ch)
@@ -457,6 +480,32 @@ function Show-GuiNetwork {
 # --- Подменяем консольные версии оконными ($Menu менять не нужно) ---
 function Show-StorageCalc { Show-GuiStorageCalc }
 function Show-NetworkMenu { Show-GuiNetwork }
+
+# --- «Консоль» внутри окна: весь Write-Host скрипта уходит в лог-панель GUI ---
+function Write-Host {
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0, ValueFromPipeline = $true, ValueFromRemainingArguments = $true)]$Object,
+        [switch]$NoNewline,
+        $Separator,
+        $ForegroundColor,
+        $BackgroundColor
+    )
+    process {
+        if ($script:LogBox) {
+            $script:LogBox.AppendText(($Object -join ' ') + $(if ($NoNewline) { '' } else { "`r`n" }))
+            [System.Windows.Forms.Application]::DoEvents()
+        } else {
+            # Панели ещё нет (старт) — пишем в настоящую консоль.
+            Microsoft.PowerShell.Utility\Write-Host @PSBoundParameters
+        }
+    }
+}
+
+# Write-Box вызывает Clear-Host — чистим лог-панель, а не консоль.
+function Clear-Host {
+    if ($script:LogBox) { $script:LogBox.Clear() } else { [Console]::Clear() }
+}
 
 # Обёртка над оригинальным Install-Item: после каждого пакета отдаём время UI,
 # чтобы окно не выглядело зависшим между установками.
