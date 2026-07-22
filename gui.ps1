@@ -24,6 +24,7 @@ if ([Threading.Thread]::CurrentThread.GetApartmentState() -ne 'STA') {
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
+Add-Type -AssemblyName Microsoft.VisualBasic   # InputBox — замена Read-Host в GUI
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
 # --- Ядро: данные ($Menu, $Programs, ...) и функции из menu.ps1 ---
@@ -263,8 +264,13 @@ function Show-GuiMain {
     $form.Controls.Add($bar)    # Bottom — последним, докается первым
     $form.CancelButton = $btnExit
 
+    # Пока открыт GUI, консольного окна не видно.
+    Hide-ConsoleWindow
     [void]$form.ShowDialog()
     $form.Dispose()
+    # Вернуть консоль: menu.ps1 после этого делает exit, а при отдельном
+    # запуске gui.ps1 сеанс не должен остаться с невидимым окном.
+    Show-ConsoleWindow
 }
 
 # =====================================================================
@@ -481,6 +487,48 @@ function Show-GuiNetwork {
 function Show-StorageCalc { Show-GuiStorageCalc }
 function Show-NetworkMenu { Show-GuiNetwork }
 
+# --- Управление окном консоли (скрыть/показать) ---
+if (-not ('HH.Win32' -as [type])) {
+    Add-Type -Namespace HH -Name Win32 -MemberDefinition @'
+[DllImport("kernel32.dll")] public static extern System.IntPtr GetConsoleWindow();
+[DllImport("user32.dll")]   public static extern bool ShowWindow(System.IntPtr hWnd, int nCmdShow);
+'@ -ErrorAction SilentlyContinue
+}
+function Hide-ConsoleWindow {
+    try { $h = [HH.Win32]::GetConsoleWindow(); if ($h -ne [IntPtr]::Zero) { [void][HH.Win32]::ShowWindow($h, 0) } } catch {}
+}
+function Show-ConsoleWindow {
+    try { $h = [HH.Win32]::GetConsoleWindow(); if ($h -ne [IntPtr]::Zero) { [void][HH.Win32]::ShowWindow($h, 5) } } catch {}
+}
+
+# Когда $true — консоль видима и ввод/вывод идут в неё (для MAS, DISM и т.п.).
+$script:ConsoleMode = $false
+
+# Выполнить действие с временно показанной консолью: то, что рисует своё
+# консольное меню или долго сыплет прогрессом, должно быть видно и управляемо.
+function Invoke-WithConsole {
+    param([scriptblock]$Body)
+    $script:ConsoleMode = $true
+    Show-ConsoleWindow
+    try { & $Body }
+    finally {
+        $script:ConsoleMode = $false
+        Hide-ConsoleWindow
+        if ($script:GuiForm) { try { $script:GuiForm.Activate() } catch {} }
+    }
+}
+
+# Ввод: в GUI-режиме — окно ввода; когда консоль показана — обычный Read-Host.
+function Read-Host {
+    param([Parameter(Position = 0)]$Prompt, [switch]$AsSecureString)
+    if ($script:ConsoleMode -or -not $script:LogBox) {
+        return Microsoft.PowerShell.Utility\Read-Host @PSBoundParameters
+    }
+    $v = [Microsoft.VisualBasic.Interaction]::InputBox([string]$Prompt, 'HH Toolbox', '')
+    if ($AsSecureString) { return (ConvertTo-SecureString $v -AsPlainText -Force) }
+    return $v
+}
+
 # --- «Консоль» внутри окна: весь Write-Host скрипта уходит в лог-панель GUI ---
 function Write-Host {
     [CmdletBinding()]
@@ -492,11 +540,11 @@ function Write-Host {
         $BackgroundColor
     )
     process {
-        if ($script:LogBox) {
+        if ($script:LogBox -and -not $script:ConsoleMode) {
             $script:LogBox.AppendText(($Object -join ' ') + $(if ($NoNewline) { '' } else { "`r`n" }))
             [System.Windows.Forms.Application]::DoEvents()
         } else {
-            # Панели ещё нет (старт) — пишем в настоящую консоль.
+            # Панели ещё нет (старт) либо консоль показана — пишем в неё.
             Microsoft.PowerShell.Utility\Write-Host @PSBoundParameters
         }
     }
@@ -504,15 +552,31 @@ function Write-Host {
 
 # Write-Box вызывает Clear-Host — чистим лог-панель, а не консоль.
 function Clear-Host {
-    if ($script:LogBox) { $script:LogBox.Clear() } else { [Console]::Clear() }
+    if ($script:LogBox -and -not $script:ConsoleMode) { $script:LogBox.Clear() }
+    else { try { [Console]::Clear() } catch {} }
 }
+
+# --- Действия, которым нужна настоящая консоль (свои меню, ввод, долгий прогресс).
+#     Оборачиваем оригиналы: на время работы консоль показывается, потом прячется.
+foreach ($fn in 'Invoke-Remote', 'Repair-System', 'Invoke-DriverUpdate', 'Invoke-NewPC',
+    'Invoke-WingetUpgrade', 'Show-UtilityMenu') {
+    if (-not (Get-Command $fn -ErrorAction SilentlyContinue)) { continue }
+    Set-Variable -Name ("Orig_" + ($fn -replace '-', '_')) -Value (Get-Command $fn).ScriptBlock -Scope Script
+}
+function Invoke-Remote        { param([string]$Url) Invoke-WithConsole { & $script:Orig_Invoke_Remote $Url } }
+function Repair-System        { Invoke-WithConsole { & $script:Orig_Repair_System } }
+function Invoke-DriverUpdate  { Invoke-WithConsole { & $script:Orig_Invoke_DriverUpdate } }
+function Invoke-NewPC         { Invoke-WithConsole { & $script:Orig_Invoke_NewPC } }
+function Invoke-WingetUpgrade { Invoke-WithConsole { & $script:Orig_Invoke_WingetUpgrade } }
+function Show-UtilityMenu     { Invoke-WithConsole { & $script:Orig_Show_UtilityMenu } }
 
 # Обёртка над оригинальным Install-Item: после каждого пакета отдаём время UI,
 # чтобы окно не выглядело зависшим между установками.
 $OrigInstallItem = ${function:Install-Item}
 function Install-Item {
     param($p)
-    $r = & $OrigInstallItem $p
+    # На время установки показываем консоль: winget сыплет прогрессом туда.
+    $r = Invoke-WithConsole { & $OrigInstallItem $p }
     [System.Windows.Forms.Application]::DoEvents()
     return $r
 }
