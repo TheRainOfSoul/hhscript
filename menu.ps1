@@ -305,10 +305,25 @@ function Show-CheckList {
     $n     = $Items.Count
     $state = @($Items | ForEach-Object { $DefaultChecked })   # стартовое состояние галочек
     $cur   = 0
+    $rowOf = @{}      # индекс пункта -> строка консоли (для точечной перерисовки)
 
     $interactive = $true
     try { $null = [Console]::KeyAvailable } catch { $interactive = $false }
 
+    # Перерисовать ОДНУ строку пункта на её месте (без очистки экрана) — быстро.
+    function DrawRow ($i) {
+        if ($rowOf.ContainsKey($i)) { try { [Console]::SetCursorPosition(0, [int]$rowOf[$i]) } catch {} }
+        $w    = try { [Console]::WindowWidth - 1 } catch { 70 }
+        $mark = if ($state[$i]) { '[x]' } else { '[ ]' }
+        if ($i -eq $cur) {
+            Write-Host (("   > $mark " + $Items[$i]).PadRight($w)) -ForegroundColor Black -BackgroundColor Gray
+        } else {
+            $col = if ($state[$i]) { 'Green' } else { 'Gray' }
+            Write-Host (("       $mark " + $Items[$i]).PadRight($w)) -ForegroundColor $col
+        }
+    }
+
+    # Полная отрисовка списка (первый раз и после «A»).
     function Draw {
         Write-Box $Title $Color
         if ($interactive) {
@@ -320,15 +335,17 @@ function Show-CheckList {
             if ($Headers -and $Headers.ContainsKey($i)) {
                 Write-Host ("   ── " + $Headers[$i] + " ──") -ForegroundColor DarkCyan
             }
-            $mark = if ($state[$i]) { '[x]' } else { '[ ]' }
-            if ($interactive -and $i -eq $cur) {
-                Write-Host ("   > $mark " + $Items[$i]) -ForegroundColor Black -BackgroundColor Gray
+            if ($interactive) {
+                $rowOf[$i] = [Console]::CursorTop
+                DrawRow $i
             } else {
-                $col = if ($state[$i]) { 'Green' } else { 'Gray' }
-                $num = if ($interactive) { '    ' } else { '{0,2}. ' -f ($i + 1) }
+                $mark = if ($state[$i]) { '[x]' } else { '[ ]' }
+                $col  = if ($state[$i]) { 'Green' } else { 'Gray' }
+                $num  = '{0,2}. ' -f ($i + 1)
                 Write-Host ("   $num$mark " + $Items[$i]) -ForegroundColor $col
             }
         }
+        if ($interactive) { $rowOf['end'] = [Console]::CursorTop }
     }
 
     if (-not $interactive) {
@@ -347,23 +364,34 @@ function Show-CheckList {
         return ,@(0..($n - 1) | Where-Object { $state[$_] })
     }
 
-    while ($true) {
+    # Один полный Draw, дальше — только изменившиеся строки (нет мигания/лага).
+    $prevCur = $true
+    try { $prevCur = [Console]::CursorVisible } catch {}
+    try {
+        try { [Console]::CursorVisible = $false } catch {}
         Draw
-        $k = [Console]::ReadKey($true)
-        switch ($k.Key) {
-            'UpArrow'   { $cur = ($cur - 1 + $n) % $n }
-            'DownArrow' { $cur = ($cur + 1) % $n }
-            'Spacebar'  { $state[$cur] = -not $state[$cur] }
-            'Enter'     { return ,@(0..($n - 1) | Where-Object { $state[$_] }) }
-            'Escape'    { return $null }
-            default {
-                $ch = ([string]$k.KeyChar).ToLower()
-                if ($ch -eq 'a' -or $ch -eq 'а') {
-                    $allOn = -not ($state -contains $false)
-                    for ($i = 0; $i -lt $n; $i++) { $state[$i] = -not $allOn }
+        while ($true) {
+            $k = [Console]::ReadKey($true)
+            switch ($k.Key) {
+                'UpArrow'   { $old = $cur; $cur = ($cur - 1 + $n) % $n; DrawRow $old; DrawRow $cur }
+                'DownArrow' { $old = $cur; $cur = ($cur + 1) % $n; DrawRow $old; DrawRow $cur }
+                'Spacebar'  { $state[$cur] = -not $state[$cur]; DrawRow $cur }
+                'Enter'     { return ,@(0..($n - 1) | Where-Object { $state[$_] }) }
+                'Escape'    { return $null }
+                default {
+                    $ch = ([string]$k.KeyChar).ToLower()
+                    if ($ch -eq 'a' -or $ch -eq 'а') {
+                        $allOn = -not ($state -contains $false)
+                        for ($i = 0; $i -lt $n; $i++) { $state[$i] = -not $allOn }
+                        Draw
+                    }
                 }
             }
         }
+    } finally {
+        try { [Console]::CursorVisible = $prevCur } catch {}
+        if ($rowOf.ContainsKey('end')) { try { [Console]::SetCursorPosition(0, [int]$rowOf['end']) } catch {} }
+        Write-Host ""
     }
 }
 
