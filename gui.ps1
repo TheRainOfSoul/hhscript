@@ -113,19 +113,59 @@ function Invoke-GuiAdminRestart {
     [System.Windows.Forms.Application]::Exit()
 }
 
+# Запустить пункт меню в ОТДЕЛЬНОМ окне консоли: окно GUI остаётся свободным,
+# а действие получает полноценную интерактивную консоль (MAS, winget, DISM...).
+function Start-GuiItemInConsole {
+    param($item)
+    $idx = [array]::IndexOf($Menu, $item)
+    if ($idx -lt 0) { return }
+    $cmd = '$SkipCliMenu=$true; iex (irm ''{0}''); & ($Menu[{1}]).Action; Write-Host ""; Write-Host "Готово. Окно можно закрыть." -ForegroundColor Cyan' -f $MenuUrl, $idx
+    $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cmd))
+    $psArgs = @('-NoExit', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $enc)
+    if ($item.Admin -and -not (Test-Admin)) {
+        Start-Process powershell -Verb RunAs -ArgumentList $psArgs
+    } else {
+        Start-Process powershell -ArgumentList $psArgs
+    }
+}
+
 function Invoke-GuiAction {
     param($item)
-    if ($item.Admin -and -not (Test-Admin)) {
+    if ($item.Admin -and -not (Test-Admin) -and -not ($script:RunInConsole -and $script:RunInConsole.Checked)) {
         $ask = [System.Windows.Forms.MessageBox]::Show(
             "Пункт «$($item.Label)» требует прав администратора.`nПерезапустить от имени администратора?",
             'HH Toolbox', 'YesNo', 'Question')
         if ($ask -eq [System.Windows.Forms.DialogResult]::Yes) { Invoke-GuiAdminRestart; return }
     }
     Write-Log "GUI: $($item.Label)"
+
+    # Режим «в отдельной консоли» — GUI не блокируется вообще.
+    if ($script:RunInConsole -and $script:RunInConsole.Checked) {
+        Start-GuiItemInConsole $item
+        return
+    }
+
+    # Иначе выполняем в этом же процессе, показывая, что идёт работа.
+    $frm      = $script:GuiForm
+    $oldTitle = if ($frm) { $frm.Text } else { $null }
+    if ($frm) {
+        $frm.Text    = "Выполняется: $($item.Label)"
+        $frm.Cursor  = [System.Windows.Forms.Cursors]::WaitCursor
+        $frm.Enabled = $false
+        [System.Windows.Forms.Application]::DoEvents()
+    }
     try { & $item.Action }
     catch {
         [void][System.Windows.Forms.MessageBox]::Show(
             "Ошибка: $($_.Exception.Message)", 'HH Toolbox', 'OK', 'Error')
+    }
+    finally {
+        if ($frm) {
+            $frm.Enabled = $true
+            $frm.Cursor  = [System.Windows.Forms.Cursors]::Default
+            $frm.Text    = $oldTitle
+            $frm.Activate()
+        }
     }
 }
 
@@ -135,6 +175,7 @@ function Show-GuiMain {
     $form.Size          = New-Object System.Drawing.Size(560, 720)
     $form.MinimumSize   = New-Object System.Drawing.Size(460, 400)
     $form.StartPosition = 'CenterScreen'
+    $script:GuiForm     = $form
 
     $flow = New-Object System.Windows.Forms.FlowLayoutPanel
     $flow.Dock          = 'Fill'
@@ -182,7 +223,15 @@ function Show-GuiMain {
     $btnExit = New-Object System.Windows.Forms.Button; $btnExit.Text = 'Выход';             $btnExit.Width = 90
     $btnAdm.Add_Click({ Invoke-GuiAdminRestart })
     $btnExit.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
-    $bar.Controls.AddRange(@($btnAdm, $btnExit))
+
+    # Если включено — пункт уходит в своё окно консоли, GUI не блокируется.
+    $chkCon = New-Object System.Windows.Forms.CheckBox
+    $chkCon.Text   = 'Запускать в отдельной консоли'
+    $chkCon.Width  = 220
+    $chkCon.Height = 26
+    $script:RunInConsole = $chkCon
+
+    $bar.Controls.AddRange(@($btnAdm, $btnExit, $chkCon))
 
     $form.Controls.Add($flow)   # Fill — первым
     $form.Controls.Add($head)   # Top
@@ -401,5 +450,15 @@ function Show-GuiNetwork {
 # --- Подменяем консольные версии оконными ($Menu менять не нужно) ---
 function Show-StorageCalc { Show-GuiStorageCalc }
 function Show-NetworkMenu { Show-GuiNetwork }
+
+# Обёртка над оригинальным Install-Item: после каждого пакета отдаём время UI,
+# чтобы окно не выглядело зависшим между установками.
+$OrigInstallItem = ${function:Install-Item}
+function Install-Item {
+    param($p)
+    $r = & $OrigInstallItem $p
+    [System.Windows.Forms.Application]::DoEvents()
+    return $r
+}
 
 Show-GuiMain
