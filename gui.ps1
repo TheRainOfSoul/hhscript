@@ -442,12 +442,21 @@ function Show-GuiNetwork {
     $out.ScrollBars = 'Both'; $out.WordWrap = $false
     $out.Font = New-Object System.Drawing.Font('Consolas', 9)
 
+    # Вывод идёт ПОТОКОМ, построчно (как в консоли): окно не «висит», результат
+    # виден по мере поступления, а DoEvents оставляет форму отзывчивой.
     $run = {
         param($title, $sb)
-        $out.Text = "=== $title ===`r`nвыполняется..."
+        $out.Text = "=== $title ===`r`n"
         $f.Refresh()
-        $text = try { (& $sb | Out-String) } catch { "Ошибка: $($_.Exception.Message)" }
-        $out.Text = "=== $title ===`r`n" + $text
+        try {
+            & $sb 2>&1 | ForEach-Object {
+                $out.AppendText(([string]$_) + "`r`n")
+                [System.Windows.Forms.Application]::DoEvents()
+            }
+        } catch {
+            $out.AppendText('Ошибка: ' + $_.Exception.Message + "`r`n")
+        }
+        $out.AppendText("=== готово ===`r`n")
     }.GetNewClosure()
 
     $addBtn = {
@@ -468,10 +477,14 @@ function Show-GuiNetwork {
             }
         }
     }.GetNewClosure()
+    # ping.exe/tracert -d вместо Test-Connection: выводят построчно и без
+    # медленного разрешения имён — результат идёт сразу, а не через 10-15 секунд.
     & $addBtn 'Ping' 244 52 80 {
-        & $run "ping $($tbHost.Text)" { Test-Connection -ComputerName $tbHost.Text -Count 4 -ErrorAction SilentlyContinue | Format-Table -AutoSize }
+        & $run "ping $($tbHost.Text)" { ping.exe -n 4 $tbHost.Text }
     }.GetNewClosure()
-    & $addBtn 'Tracert' 330 52 90 { & $run "tracert $($tbHost.Text)" { tracert $tbHost.Text } }.GetNewClosure()
+    & $addBtn 'Tracert' 330 52 90 {
+        & $run "tracert $($tbHost.Text)" { tracert.exe -d $tbHost.Text }
+    }.GetNewClosure()
     & $addBtn 'DNS → 1.1.1.1' 426 52 125 {
         Switch-Dns '1.1.1.1', '1.0.0.1'; & $run 'DNS' { Get-DnsClientServerAddress -AddressFamily IPv4 | Format-Table -AutoSize }
     }.GetNewClosure()
