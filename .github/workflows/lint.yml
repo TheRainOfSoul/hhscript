@@ -32,6 +32,12 @@ jobs:
           }
           if ($bad) { exit 1 }
 
+      # Ловит регрессию, из-за которой лаунчер лёг: BOM в файле проходит
+      # синтаксический разбор, но ломает `irm | iex` на первом токене.
+      - name: Delivery check (irm | iex)
+        shell: pwsh
+        run: ./tests/Test-Delivery.ps1
+
       - name: PSScriptAnalyzer (errors fail, warnings informational)
         shell: pwsh
         run: |

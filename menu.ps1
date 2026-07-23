@@ -1,4 +1,4 @@
-﻿# =====================================================================
+# =====================================================================
 #  HH Script — универсальный лаунчер
 #  Запуск:  irm get.hhtdom.ru | iex
 # =====================================================================
@@ -115,7 +115,10 @@ function Invoke-Remote {
     param([string]$Url)
     try {
         Write-Host "`n  Загрузка: $Url`n" -ForegroundColor DarkGray
-        Invoke-Expression (Invoke-RestMethod -Uri $Url)
+        # TrimStart: irm отдаёт BOM файла как символ U+FEFF (Encoding.GetString его
+        # не срезает), и тогда iex падает на первом же токене. Чужие скрипты с BOM
+        # нам не подконтрольны, поэтому чистим здесь.
+        Invoke-Expression ([string](Invoke-RestMethod -Uri $Url)).TrimStart([char]0xFEFF)
     } catch {
         Write-Host "`n  Ошибка: $($_.Exception.Message)" -ForegroundColor Red
     }
@@ -1091,7 +1094,7 @@ function Show-Menu {
 if (-not $SkipCliMenu) {
     $GuiStarted = $false
     if (-not $ForceCli -and [Threading.Thread]::CurrentThread.GetApartmentState() -eq 'STA') {
-        try { Invoke-Expression (Invoke-RestMethod -Uri $GuiUrl) }
+        try { Invoke-Expression ([string](Invoke-RestMethod -Uri $GuiUrl)).TrimStart([char]0xFEFF) }
         catch {
             Write-Host "`n  GUI не запустился ($($_.Exception.Message))." -ForegroundColor DarkYellow
             Write-Host "  Открываю консольное меню.`n" -ForegroundColor DarkYellow

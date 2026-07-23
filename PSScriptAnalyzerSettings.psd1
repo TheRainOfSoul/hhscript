@@ -25,6 +25,14 @@
         # а вопросы задаются окном ввода. Без подмены GUI работать не может.
         'PSAvoidOverwritingBuiltInCmdlets',
 
+        # menu.ps1 / gui.ps1 / scripts/*.ps1 доставляются как `irm <url> | iex`.
+        # Invoke-RestMethod декодирует ответ через Encoding.GetString, который BOM
+        # НЕ срезает: он приходит символом U+FEFF в начало строки, и iex падает
+        # («The term '<BOM>#' is not recognized»). То есть BOM здесь ломает саму
+        # модель доставки, поэтому файлы намеренно без BOM. Проверяется тестом
+        # tests/Test-Delivery.ps1 в CI.
+        'PSUseBOMForUnicodeEncodedFile',
+
         # Ложные/безобидные срабатывания на именах: Switch-Dns (DNS — аббревиатура,
         # а не множественное число) и Get-DahuaDays (термин самого калькулятора
         # Dahua: результат вкладки «Storage Time» измеряется в Days).

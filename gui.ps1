@@ -1,4 +1,4 @@
-﻿# =====================================================================
+# =====================================================================
 #  HH Toolbox — GUI (WinForms)
 #  Запуск:
 #    irm https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/gui.ps1 | iex
@@ -36,7 +36,8 @@ if (-not $Menu) {
     # «переменная назначена, но не используется» (чтения через iex он не видит).
     Set-Variable -Name SkipCliMenu -Value $true
     try {
-        Invoke-Expression (Invoke-RestMethod -Uri $MenuUrl)
+        # TrimStart: BOM файла приходит от irm как символ U+FEFF и ломает iex.
+        Invoke-Expression ([string](Invoke-RestMethod -Uri $MenuUrl)).TrimStart([char]0xFEFF)
     } catch {
         [void][System.Windows.Forms.MessageBox]::Show(
             "Не удалось загрузить menu.ps1:`n$($_.Exception.Message)", 'HH Toolbox', 'OK', 'Error')
