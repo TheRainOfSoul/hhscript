@@ -8,8 +8,8 @@
 #  Вывод выполнения (winget, DISM, MAS и т.п.) идёт в окно консоли позади.
 # =====================================================================
 try { [Net.ServicePointManager]::SecurityProtocol = `
-        [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch {}
-try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
+        [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { $null = $_ }
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { $null = $_ }
 
 $MenuUrl = 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/menu.ps1'
 $GuiUrl  = 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/gui.ps1'
@@ -516,10 +516,10 @@ if (-not ('HH.Win32' -as [type])) {
 '@ -ErrorAction SilentlyContinue
 }
 function Hide-ConsoleWindow {
-    try { $h = [HH.Win32]::GetConsoleWindow(); if ($h -ne [IntPtr]::Zero) { [void][HH.Win32]::ShowWindow($h, 0) } } catch {}
+    try { $h = [HH.Win32]::GetConsoleWindow(); if ($h -ne [IntPtr]::Zero) { [void][HH.Win32]::ShowWindow($h, 0) } } catch { $null = $_ }
 }
 function Show-ConsoleWindow {
-    try { $h = [HH.Win32]::GetConsoleWindow(); if ($h -ne [IntPtr]::Zero) { [void][HH.Win32]::ShowWindow($h, 5) } } catch {}
+    try { $h = [HH.Win32]::GetConsoleWindow(); if ($h -ne [IntPtr]::Zero) { [void][HH.Win32]::ShowWindow($h, 5) } } catch { $null = $_ }
 }
 
 # Ввод: пока открыт GUI — окно ввода вместо консольного Read-Host.
@@ -554,7 +554,7 @@ function Write-Host {
 
 # Write-Box вызывает Clear-Host — чистим лог-панель, а не консоль.
 function Clear-Host {
-    if ($script:LogBox) { $script:LogBox.Clear() } else { try { [Console]::Clear() } catch {} }
+    if ($script:LogBox) { $script:LogBox.Clear() } else { try { [Console]::Clear() } catch { $null = $_ } }
 }
 
 # Внешние консольные скрипты (MAS, Win11Debloat, стресс-тест) рисуют собственное

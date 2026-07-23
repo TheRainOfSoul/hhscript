@@ -35,7 +35,7 @@ jobs:
       - name: PSScriptAnalyzer (errors fail, warnings informational)
         shell: pwsh
         run: |
-          $all = Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error, Warning
+          $all = Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1 -Severity Error, Warning
           $errors = @($all | Where-Object Severity -eq 'Error')
           $warns  = @($all | Where-Object Severity -eq 'Warning')
           if ($warns)  { Write-Host "Warnings ($($warns.Count)):";  $warns  | Format-Table RuleName, ScriptName, Line, Message -AutoSize -Wrap }

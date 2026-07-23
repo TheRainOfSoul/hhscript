@@ -9,8 +9,8 @@ $GuiUrl      = 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/gu
 
 # --- Совместимость со старыми системами + кириллица ------------------
 try { [Net.ServicePointManager]::SecurityProtocol = `
-        [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch {}
-try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
+        [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { $null = $_ }
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { $null = $_ }
 
 $HasWinget = [bool](Get-Command winget -ErrorAction SilentlyContinue)
 $Version   = '2026.07.11'                              # версия скрипта (в шапке меню)
@@ -181,7 +181,7 @@ function Get-YadiskFile {
 function Write-Log {
     param([string]$Message)
     try { ("{0}  {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message) |
-        Out-File -FilePath $LogFile -Append -Encoding utf8 -ErrorAction SilentlyContinue } catch {}
+        Out-File -FilePath $LogFile -Append -Encoding utf8 -ErrorAction SilentlyContinue } catch { $null = $_ }
 }
 
 # Точка восстановления перед разрушающими действиями. Нужен админ;
@@ -313,7 +313,7 @@ function Show-CheckList {
 
     # Перерисовать ОДНУ строку пункта на её месте (без очистки экрана) — быстро.
     function DrawRow ($i) {
-        if ($rowOf.ContainsKey($i)) { try { [Console]::SetCursorPosition(0, [int]$rowOf[$i]) } catch {} }
+        if ($rowOf.ContainsKey($i)) { try { [Console]::SetCursorPosition(0, [int]$rowOf[$i]) } catch { $null = $_ } }
         $w    = try { [Console]::WindowWidth - 1 } catch { 70 }
         $mark = if ($state[$i]) { '[x]' } else { '[ ]' }
         if ($i -eq $cur) {
@@ -367,9 +367,9 @@ function Show-CheckList {
 
     # Один полный Draw, дальше — только изменившиеся строки (нет мигания/лага).
     $prevCur = $true
-    try { $prevCur = [Console]::CursorVisible } catch {}
+    try { $prevCur = [Console]::CursorVisible } catch { $null = $_ }
     try {
-        try { [Console]::CursorVisible = $false } catch {}
+        try { [Console]::CursorVisible = $false } catch { $null = $_ }
         Draw
         while ($true) {
             $k = [Console]::ReadKey($true)
@@ -390,8 +390,8 @@ function Show-CheckList {
             }
         }
     } finally {
-        try { [Console]::CursorVisible = $prevCur } catch {}
-        if ($rowOf.ContainsKey('end')) { try { [Console]::SetCursorPosition(0, [int]$rowOf['end']) } catch {} }
+        try { [Console]::CursorVisible = $prevCur } catch { $null = $_ }
+        if ($rowOf.ContainsKey('end')) { try { [Console]::SetCursorPosition(0, [int]$rowOf['end']) } catch { $null = $_ } }
         Write-Host ""
     }
 }
