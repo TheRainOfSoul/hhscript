@@ -1,4 +1,4 @@
-# =====================================================================
+﻿# =====================================================================
 #  HH Toolbox — GUI (WinForms)
 #  Запуск:
 #    irm https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/gui.ps1 | iex
