@@ -5,8 +5,8 @@
 #  Встроенный CPU-прожиг (чистый PowerShell) + запуск OCCT/FurMark/CrystalDiskMark/HWiNFO.
 # =====================================================================
 try { [Net.ServicePointManager]::SecurityProtocol = `
-        [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch {}
-try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
+        [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { $null = $_ }
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { $null = $_ }
 
 # Температура CPU через WMI (на десктопах часто недоступна — тогда "н/д").
 function Get-CpuTemp {
@@ -16,7 +16,7 @@ function Get-CpuTemp {
             $c = [math]::Round(($t.CurrentTemperature / 10) - 273.15, 0)
             return "Темп: $c°C"
         }
-    } catch {}
+    } catch { $null = $_ }
     return "Темп: н/д (точнее в HWiNFO)"
 }
 
@@ -36,12 +36,12 @@ function Invoke-CpuStress {
     Write-Host "`n  Нагрузка на $cores потоков, $min мин...`n" -ForegroundColor Green
     $jobs = 1..$cores | ForEach-Object {
         Start-Job -ScriptBlock {
-            param($deadline)
-            $x = 0.0
-            while ((Get-Date) -lt $deadline) {
-                for ($i = 1; $i -lt 2000000; $i++) { $x = [math]::Sqrt($i) * [math]::Sin($i) }
+            # $using: вместо param/-ArgumentList; результат в $null — считаем
+            # ради нагрузки на ядро, само значение не нужно.
+            while ((Get-Date) -lt $using:end) {
+                for ($i = 1; $i -lt 2000000; $i++) { $null = [math]::Sqrt($i) * [math]::Sin($i) }
             }
-        } -ArgumentList $end
+        }
     }
 
     while ((Get-Date) -lt $end) {

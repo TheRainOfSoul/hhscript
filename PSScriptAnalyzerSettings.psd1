@@ -18,6 +18,16 @@
         # Ложное срабатывание: параметры Show-CheckList (Title/Color/Headers)
         # используются во вложенных функциях Draw/DrawRow через динамическую
         # область видимости PowerShell, которую анализатор не отслеживает.
-        'PSReviewUnusedParameter'
+        'PSReviewUnusedParameter',
+
+        # gui.ps1 НАМЕРЕННО переопределяет Write-Host / Read-Host / Clear-Host —
+        # на этом построена встроенная консоль: вывод уходит в лог-панель окна,
+        # а вопросы задаются окном ввода. Без подмены GUI работать не может.
+        'PSAvoidOverwritingBuiltInCmdlets',
+
+        # Ложные/безобидные срабатывания на именах: Switch-Dns (DNS — аббревиатура,
+        # а не множественное число) и Get-DahuaDays (термин самого калькулятора
+        # Dahua: результат вкладки «Storage Time» измеряется в Days).
+        'PSUseSingularNouns'
     )
 }

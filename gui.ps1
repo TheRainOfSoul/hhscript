@@ -123,7 +123,7 @@ function Invoke-GuiAdminRestart {
 
 # Запустить пункт меню в ОТДЕЛЬНОМ окне консоли: окно GUI остаётся свободным,
 # а действие получает полноценную интерактивную консоль (MAS, winget, DISM...).
-function Start-GuiItemInConsole {
+function Invoke-GuiItemInConsole {
     param($item)
     $idx = [array]::IndexOf($Menu, $item)
     if ($idx -lt 0) { return }
@@ -149,7 +149,7 @@ function Invoke-GuiAction {
 
     # Режим «в отдельной консоли» — GUI не блокируется вообще.
     if ($script:RunInConsole -and $script:RunInConsole.Checked) {
-        Start-GuiItemInConsole $item
+        Invoke-GuiItemInConsole $item
         return
     }
 
@@ -525,10 +525,16 @@ function Show-ConsoleWindow {
 # Ввод: пока открыт GUI — окно ввода вместо консольного Read-Host.
 function Read-Host {
     param([Parameter(Position = 0)]$Prompt, [switch]$AsSecureString)
+    # Пароль через InputBox не спрашиваем: он был бы обычным текстом, а потом
+    # его пришлось бы «превращать» в SecureString — это лишь видимость защиты.
+    # Отдаём настоящему Read-Host, временно показав консоль.
+    if ($AsSecureString) {
+        Show-ConsoleWindow
+        try { return Microsoft.PowerShell.Utility\Read-Host @PSBoundParameters }
+        finally { Hide-ConsoleWindow }
+    }
     if (-not $script:LogBox) { return Microsoft.PowerShell.Utility\Read-Host @PSBoundParameters }
-    $v = [Microsoft.VisualBasic.Interaction]::InputBox([string]$Prompt, 'HH Toolbox', '')
-    if ($AsSecureString) { return (ConvertTo-SecureString $v -AsPlainText -Force) }
-    return $v
+    return [Microsoft.VisualBasic.Interaction]::InputBox([string]$Prompt, 'HH Toolbox', '')
 }
 
 # --- «Консоль» внутри окна: весь Write-Host скрипта уходит в лог-панель GUI ---
