@@ -694,6 +694,27 @@ function Show-GuiNetwork {
         }.GetNewClosure()
     }.GetNewClosure()
 
+    # Непрерывный «Ping -t»: раз в секунду один ping -n 1 (эквивалент -t), но с
+    # чистой остановкой и без заморозки окна. $pingTimer.Enabled = флаг «идёт».
+    $pingTimer = New-Object System.Windows.Forms.Timer
+    $pingTimer.Interval = 1000
+    $pingTimer.Add_Tick({
+        $h = $tbHost.Text.Trim()
+        if (-not $h) { return }
+        # Строку ответа берём locale-независимо: первая непустая после заголовка
+        # (работает и на русской, и на английской Windows).
+        $lines = @(ping.exe -n 1 -w 800 $h 2>&1)
+        # Среди непустых строк [0] — заголовок «Pinging…»/«Обмен пакетами…»,
+        # [1] — сам ответ/таймаут. Берём [1] (locale-независимо), заголовок пропускаем.
+        $body  = @($lines | Where-Object { $_.Trim() })
+        $reply = if ($body.Count -ge 2) { ([string]$body[1]).Trim() }
+                 elseif ($body.Count -eq 1) { ([string]$body[0]).Trim() }
+                 else { '(нет ответа)' }
+        $out.AppendText(('{0}  {1}' -f (Get-Date -Format 'HH:mm:ss'), $reply) + "`r`n")
+        $out.SelectionStart = $out.TextLength
+        $out.ScrollToCaret()
+    }.GetNewClosure())
+
     $addBtn = {
         param($text, $width, $action)
         $b = New-Object System.Windows.Forms.Button
@@ -726,6 +747,24 @@ function Show-GuiNetwork {
     & $addBtn 'Tracert' 88 {
         & $run "tracert $($tbHost.Text)" { tracert.exe -d $tbHost.Text }
     }.GetNewClosure()
+    # «Ping -t» — отдельной кнопкой: нужна ссылка на неё, чтобы менять текст Старт/Стоп.
+    $btnPingT = New-Object System.Windows.Forms.Button
+    $btnPingT.Text = 'Ping -t'; $btnPingT.Width = 112; $btnPingT.Height = 30
+    $btnPingT.Margin = New-Object System.Windows.Forms.Padding(0, 0, 6, 4)
+    Set-FlatButton $btnPingT
+    $btnPingT.Add_Click({
+        if ($pingTimer.Enabled) {
+            $pingTimer.Stop()
+            $btnPingT.Text = 'Ping -t'
+            $out.AppendText("=== ping -t остановлен ===`r`n")
+        } else {
+            $h = $tbHost.Text.Trim()
+            $out.Text = "=== ping -t $h  (клик ещё раз — стоп) ===`r`n"
+            $btnPingT.Text = 'Стоп ping -t'
+            $pingTimer.Start()
+        }
+    }.GetNewClosure())
+    $btnRow.Controls.Add($btnPingT)
     & $addBtn 'pathping' 92 {
         & $run "pathping $($tbHost.Text)" { pathping.exe -n $tbHost.Text }
     }.GetNewClosure()
@@ -777,6 +816,7 @@ function Show-GuiNetwork {
     $f.Controls.Add($btnRow)    # Top — ряд кнопок
     $f.Controls.Add($hostPanel) # Top — добавлен последним, окажется сверху
     [void]$f.ShowDialog()
+    $pingTimer.Stop(); $pingTimer.Dispose()   # непрерывный пинг не должен пережить окно
     $f.Dispose()
 }
 
