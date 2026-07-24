@@ -617,12 +617,12 @@ function Show-GuiStorageCalc {
 function Show-GuiNetwork {
     $f = New-Object System.Windows.Forms.Form
     $f.Text          = 'Сетевые утилиты'
-    $f.Size          = New-Object System.Drawing.Size(840, 620)
+    $f.Size          = New-Object System.Drawing.Size(900, 640)
     $f.MinimumSize   = New-Object System.Drawing.Size(660, 460)
     $f.StartPosition = 'CenterScreen'
     Initialize-DarkForm $f
 
-    # Строка «Хост / IP» — отдельная панель сверху.
+    # Строка «Хост / IP» и «Порт» — отдельная панель сверху.
     $hostPanel = New-Object System.Windows.Forms.Panel
     $hostPanel.Dock = 'Top'; $hostPanel.Height = 44
     $hostPanel.BackColor = $script:Theme.Bg
@@ -633,11 +633,20 @@ function Show-GuiNetwork {
     $tbHost = New-Object System.Windows.Forms.TextBox
     $tbHost.Left = 88; $tbHost.Top = 10; $tbHost.Width = 200; $tbHost.Text = '8.8.8.8'
     Set-DarkInput $tbHost
-    $hostPanel.Controls.AddRange(@($lbl, $tbHost))
+    $lblPort = New-Object System.Windows.Forms.Label
+    $lblPort.Text = 'Порт:'; $lblPort.Left = 302; $lblPort.Top = 12; $lblPort.Width = 42; $lblPort.Height = 23
+    $lblPort.TextAlign = 'MiddleLeft'
+    Set-DarkLabel $lblPort
+    $tbPort = New-Object System.Windows.Forms.TextBox
+    $tbPort.Left = 348; $tbPort.Top = 10; $tbPort.Width = 80; $tbPort.Text = '554'
+    Set-DarkInput $tbPort
+    $hostPanel.Controls.AddRange(@($lbl, $tbHost, $lblPort, $tbPort))
 
-    # Ряд кнопок — FlowLayoutPanel с равными интервалами (переносится по ширине окна).
+    # Ряд кнопок — FlowLayoutPanel с равными интервалами (переносится по ширине окна,
+    # AutoScroll — на случай, если кнопок больше, чем влезает в высоту при узком окне).
     $btnRow = New-Object System.Windows.Forms.FlowLayoutPanel
-    $btnRow.Dock = 'Top'; $btnRow.Height = 80; $btnRow.WrapContents = $true
+    $btnRow.Dock = 'Top'; $btnRow.Height = 150; $btnRow.WrapContents = $true
+    $btnRow.AutoScroll = $true
     $btnRow.BackColor = $script:Theme.Bg
     $btnRow.Padding = New-Object System.Windows.Forms.Padding(8, 6, 8, 6)
 
@@ -666,6 +675,25 @@ function Show-GuiNetwork {
         $out.AppendText("=== готово ===`r`n")
     }.GetNewClosure()
 
+    # Быстрая проверка TCP-порта: TcpClient с таймаутом 2с. Test-NetConnection
+    # на закрытом порту ждал бы до ~20с и морозил окно — здесь этого нет.
+    $portCheck = {
+        param($p)
+        $h = $tbHost.Text.Trim()
+        & $run "порт $h : $p" {
+            $client = New-Object System.Net.Sockets.TcpClient
+            try {
+                $iar = $client.BeginConnect($h, [int]$p, $null, $null)
+                if ($iar.AsyncWaitHandle.WaitOne(2000) -and $client.Connected) {
+                    "Порт $p ОТКРЫТ на $h"
+                } else {
+                    "Порт $p закрыт или недоступен на $h (таймаут 2с)"
+                }
+            } catch { "Ошибка: $($_.Exception.Message)" }
+            finally { $client.Close() }
+        }.GetNewClosure()
+    }.GetNewClosure()
+
     $addBtn = {
         param($text, $width, $action)
         $b = New-Object System.Windows.Forms.Button
@@ -676,6 +704,7 @@ function Show-GuiNetwork {
         $btnRow.Controls.Add($b)
     }.GetNewClosure()
 
+    # --- Диагностика ---
     & $addBtn 'ipconfig /all' 118 { & $run 'ipconfig /all' { ipconfig /all } }.GetNewClosure()
     & $addBtn 'Адаптеры' 96 {
         & $run 'Адаптеры' {
@@ -686,6 +715,9 @@ function Show-GuiNetwork {
             }
         }
     }.GetNewClosure()
+    & $addBtn 'Конфигурация' 118 {
+        & $run 'Get-NetIPConfiguration' { Get-NetIPConfiguration | Out-String -Stream }
+    }.GetNewClosure()
     # ping.exe/tracert -d вместо Test-Connection: выводят построчно и без
     # медленного разрешения имён — результат идёт сразу, а не через 10-15 секунд.
     & $addBtn 'Ping' 78 {
@@ -694,15 +726,49 @@ function Show-GuiNetwork {
     & $addBtn 'Tracert' 88 {
         & $run "tracert $($tbHost.Text)" { tracert.exe -d $tbHost.Text }
     }.GetNewClosure()
+    & $addBtn 'pathping' 92 {
+        & $run "pathping $($tbHost.Text)" { pathping.exe -n $tbHost.Text }
+    }.GetNewClosure()
+    & $addBtn 'nslookup' 96 {
+        & $run "nslookup $($tbHost.Text)" { nslookup.exe $tbHost.Text 2>&1 }
+    }.GetNewClosure()
+    & $addBtn 'netstat' 90 { & $run 'netstat -ano' { netstat.exe -ano } }.GetNewClosure()
+    & $addBtn 'arp -a' 74 { & $run 'arp -a' { arp.exe -a } }.GetNewClosure()
+    & $addBtn 'route' 74 { & $run 'route print' { route.exe print } }.GetNewClosure()
+    & $addBtn 'getmac' 88 { & $run 'getmac /v' { getmac.exe /v /fo list } }.GetNewClosure()
+
+    # --- Порт-чек (поле «Порт» + пресеты портов камер) ---
+    & $addBtn 'Проверить порт' 130 { & $portCheck ($tbPort.Text.Trim()) }.GetNewClosure()
+    & $addBtn 'RTSP 554' 92 { & $portCheck 554 }.GetNewClosure()
+    & $addBtn 'HTTP 80' 88 { & $portCheck 80 }.GetNewClosure()
+    & $addBtn 'Dahua 37777' 112 { & $portCheck 37777 }.GetNewClosure()
+    & $addBtn 'Hik 8000' 92 { & $portCheck 8000 }.GetNewClosure()
+
+    # --- DNS ---
     & $addBtn 'DNS → 1.1.1.1' 122 {
-        Switch-Dns '1.1.1.1', '1.0.0.1'; & $run 'DNS' { Get-DnsClientServerAddress -AddressFamily IPv4 | Format-Table -AutoSize }
+        Switch-Dns '1.1.1.1', '1.0.0.1'; & $run 'DNS' { Get-DnsClientServerAddress -AddressFamily IPv4 | Out-String -Stream }
     }.GetNewClosure()
     & $addBtn 'DNS → 8.8.8.8' 122 {
-        Switch-Dns '8.8.8.8', '8.8.4.4'; & $run 'DNS' { Get-DnsClientServerAddress -AddressFamily IPv4 | Format-Table -AutoSize }
+        Switch-Dns '8.8.8.8', '8.8.4.4'; & $run 'DNS' { Get-DnsClientServerAddress -AddressFamily IPv4 | Out-String -Stream }
     }.GetNewClosure()
     & $addBtn 'DNS → авто' 108 {
-        Switch-Dns @(); & $run 'DNS' { Get-DnsClientServerAddress -AddressFamily IPv4 | Format-Table -AutoSize }
+        Switch-Dns @(); & $run 'DNS' { Get-DnsClientServerAddress -AddressFamily IPv4 | Out-String -Stream }
     }.GetNewClosure()
+    & $addBtn 'Очистить DNS' 118 { & $run 'ipconfig /flushdns' { ipconfig /flushdns } }.GetNewClosure()
+    & $addBtn 'Показать кэш' 120 { & $run 'ipconfig /displaydns' { ipconfig /displaydns } }.GetNewClosure()
+
+    # --- DHCP / Wi-Fi / прочее ---
+    & $addBtn 'Обновить DHCP' 128 {
+        & $run 'ipconfig /release + /renew' { ipconfig /release; ipconfig /renew }
+    }.GetNewClosure()
+    & $addBtn 'Wi-Fi' 74 { & $run 'netsh wlan show interfaces' { netsh wlan show interfaces } }.GetNewClosure()
+    & $addBtn 'Внешний IP' 110 {
+        & $run 'Внешний IP' {
+            try { 'Внешний IP: ' + (Invoke-RestMethod -Uri 'https://api.ipify.org' -TimeoutSec 6) }
+            catch { 'Не удалось получить внешний IP: ' + $_.Exception.Message }
+        }
+    }.GetNewClosure()
+
     & $addBtn 'Сброс сети (нужен админ)' 190 {
         Repair-Network; & $run 'Сброс сети' { 'Выполнено. Подробности — в окне консоли. Требуется перезагрузка.' }
     }.GetNewClosure()
