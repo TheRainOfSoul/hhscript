@@ -27,6 +27,103 @@ Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName Microsoft.VisualBasic   # InputBox — замена Read-Host в GUI
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
+# =====================================================================
+#  Тёмная тема: единый источник цветов + хелперы стилизации. Живёт ТОЛЬКО
+#  в gui.ps1; menu.ps1 (консольное меню) не меняется. Все четыре окна берут
+#  цвета из $script:Theme, поэтому вид везде одинаковый и правится в одном месте.
+# =====================================================================
+$script:Theme = @{
+    Bg          = [System.Drawing.Color]::FromArgb(32, 32, 32)    # фон окна
+    Surface     = [System.Drawing.Color]::FromArgb(45, 45, 48)    # кнопки, поля ввода
+    Hover       = [System.Drawing.Color]::FromArgb(10, 90, 110)   # наведение на кнопку-пункт
+    Accent      = [System.Drawing.Color]::FromArgb(0, 160, 175)   # заливка главных кнопок
+    AccentText  = [System.Drawing.Color]::FromArgb(54, 190, 205)  # заголовки секций (ярче — читаемо на тёмном)
+    AccentDown  = [System.Drawing.Color]::FromArgb(0, 130, 145)   # нажатие
+    Text        = [System.Drawing.Color]::FromArgb(230, 230, 230)
+    TextDim     = [System.Drawing.Color]::FromArgb(150, 150, 150)
+    Border      = [System.Drawing.Color]::FromArgb(60, 60, 63)
+    ConsoleBg   = [System.Drawing.Color]::FromArgb(24, 24, 24)     # лог и поля вывода
+    PrimaryText = [System.Drawing.Color]::FromArgb(10, 22, 24)     # тёмный текст на бирюзовой кнопке
+    Font        = New-Object System.Drawing.Font('Segoe UI', 9)
+    FontBold    = New-Object System.Drawing.Font('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)
+    Mono        = New-Object System.Drawing.Font('Consolas', 9)
+}
+
+# Тёмная системная рамка/заголовок окна (Win10 2004+/Win11). Без этого над тёмным
+# телом окна висела бы белая рамка. Обращение к .Handle создаёт нативный хэндл,
+# атрибут применяется до показа окна, поэтому мигания светлой рамкой нет.
+# [HH.Win32] определён ниже по файлу, но к моменту показа окон уже загружен.
+function Set-DarkTitleBar($form) {
+    try {
+        $v = 1
+        # 20 = DWMWA_USE_IMMERSIVE_DARK_MODE; 19 — на ранних сборках Win10.
+        if ([HH.Win32]::DwmSetWindowAttribute($form.Handle, 20, [ref]$v, 4) -ne 0) {
+            [void][HH.Win32]::DwmSetWindowAttribute($form.Handle, 19, [ref]$v, 4)
+        }
+    } catch { $null = $_ }
+}
+
+# Базовое оформление формы: фон, цвет текста, шрифт, тёмный заголовок.
+function Initialize-DarkForm($form) {
+    $form.BackColor = $script:Theme.Bg
+    $form.ForeColor = $script:Theme.Text
+    $form.Font      = $script:Theme.Font
+    Set-DarkTitleBar $form
+}
+
+# Плоская кнопка. -Primary — заливка акцентом (главное действие в окне);
+# без флага — «поверхность» с бирюзовой подсветкой при наведении.
+function Set-FlatButton($btn, [switch]$Primary) {
+    $btn.FlatStyle = 'Flat'
+    $btn.FlatAppearance.BorderSize = 0
+    $btn.Cursor = [System.Windows.Forms.Cursors]::Hand
+    if ($Primary) {
+        $btn.BackColor = $script:Theme.Accent
+        $btn.ForeColor = $script:Theme.PrimaryText
+        $btn.Font      = $script:Theme.FontBold
+        $btn.FlatAppearance.MouseOverBackColor = $script:Theme.AccentText
+        $btn.FlatAppearance.MouseDownBackColor = $script:Theme.AccentDown
+    } else {
+        $btn.BackColor = $script:Theme.Surface
+        $btn.ForeColor = $script:Theme.Text
+        $btn.FlatAppearance.MouseOverBackColor = $script:Theme.Hover
+        $btn.FlatAppearance.MouseDownBackColor = $script:Theme.AccentDown
+    }
+}
+
+# Тёмное поле ввода: TextBox / NumericUpDown / ComboBox.
+function Set-DarkInput($ctrl) {
+    $ctrl.BackColor = $script:Theme.Surface
+    $ctrl.ForeColor = $script:Theme.Text
+    if ($ctrl -is [System.Windows.Forms.ComboBox]) { $ctrl.FlatStyle = 'Flat' }
+    else { try { $ctrl.BorderStyle = 'FixedSingle' } catch { $null = $_ } }
+}
+
+function Set-DarkLabel($lbl) {
+    $lbl.ForeColor = $script:Theme.Text
+    $lbl.BackColor = [System.Drawing.Color]::Transparent
+}
+
+# Заголовок секции в главном меню: бирюзовый жирный + тонкая линия-разделитель.
+function Add-SectionHeader($flow, $text) {
+    $lbl = New-Object System.Windows.Forms.Label
+    $lbl.Text      = $text.ToUpper()
+    $lbl.Font      = $script:Theme.FontBold
+    $lbl.ForeColor = $script:Theme.AccentText
+    $lbl.AutoSize  = $false
+    $lbl.Width     = 480
+    $lbl.Height    = 22
+    $lbl.TextAlign = 'BottomLeft'
+    $lbl.Margin    = New-Object System.Windows.Forms.Padding(2, 14, 2, 0)
+    [void]$flow.Controls.Add($lbl)
+    $div = New-Object System.Windows.Forms.Panel
+    $div.Width     = 480
+    $div.Height    = 1
+    $div.BackColor = $script:Theme.Border
+    $div.Margin    = New-Object System.Windows.Forms.Padding(2, 2, 2, 6)
+    [void]$flow.Controls.Add($div)
+}
+
 # --- Ядро: данные ($Menu, $Programs, ...) и функции из menu.ps1 ---
 # Если gui.ps1 вызван из menu.ps1, всё уже загружено — повторно не тянем
 # (иначе получилась бы циклическая загрузка).
@@ -57,6 +154,7 @@ function Show-CheckList {
     $form.Size          = New-Object System.Drawing.Size(640, 660)
     $form.MinimumSize   = New-Object System.Drawing.Size(480, 400)
     $form.StartPosition = 'CenterScreen'
+    Initialize-DarkForm $form
 
     $lv = New-Object System.Windows.Forms.ListView
     $lv.Dock          = 'Fill'
@@ -64,6 +162,10 @@ function Show-CheckList {
     $lv.CheckBoxes    = $true
     $lv.FullRowSelect = $true
     $lv.HeaderStyle   = 'None'
+    $lv.BorderStyle   = 'None'
+    $lv.BackColor     = $script:Theme.ConsoleBg
+    $lv.ForeColor     = $script:Theme.Text
+    $lv.Font          = $script:Theme.Font
     [void]$lv.Columns.Add('', 590)
 
     $group = $null
@@ -80,14 +182,19 @@ function Show-CheckList {
     }
 
     $bar = New-Object System.Windows.Forms.FlowLayoutPanel
-    $bar.Dock    = 'Bottom'
-    $bar.Height  = 46
-    $bar.Padding = New-Object System.Windows.Forms.Padding(8, 8, 8, 8)
+    $bar.Dock      = 'Bottom'
+    $bar.Height    = 46
+    $bar.Padding   = New-Object System.Windows.Forms.Padding(8, 8, 8, 8)
+    $bar.BackColor = $script:Theme.Bg
 
-    $btnOk   = New-Object System.Windows.Forms.Button; $btnOk.Text   = 'Применить';    $btnOk.Width   = 110
-    $btnCan  = New-Object System.Windows.Forms.Button; $btnCan.Text  = 'Отмена';       $btnCan.Width  = 90
-    $btnAll  = New-Object System.Windows.Forms.Button; $btnAll.Text  = 'Отметить всё'; $btnAll.Width  = 120
-    $btnNone = New-Object System.Windows.Forms.Button; $btnNone.Text = 'Снять всё';    $btnNone.Width = 100
+    $btnOk   = New-Object System.Windows.Forms.Button; $btnOk.Text   = 'Применить';    $btnOk.Width   = 110; $btnOk.Height   = 30
+    $btnCan  = New-Object System.Windows.Forms.Button; $btnCan.Text  = 'Отмена';       $btnCan.Width  = 90;  $btnCan.Height  = 30
+    $btnAll  = New-Object System.Windows.Forms.Button; $btnAll.Text  = 'Отметить всё'; $btnAll.Width  = 120; $btnAll.Height  = 30
+    $btnNone = New-Object System.Windows.Forms.Button; $btnNone.Text = 'Снять всё';    $btnNone.Width = 100; $btnNone.Height = 30
+    Set-FlatButton $btnOk -Primary
+    Set-FlatButton $btnCan
+    Set-FlatButton $btnAll
+    Set-FlatButton $btnNone
 
     $btnOk.DialogResult  = [System.Windows.Forms.DialogResult]::OK
     $btnCan.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
@@ -193,59 +300,62 @@ function Show-GuiMain {
     $form.MinimumSize   = New-Object System.Drawing.Size(460, 400)
     $form.StartPosition = 'CenterScreen'
     $script:GuiForm     = $form
+    Initialize-DarkForm $form
 
     $flow = New-Object System.Windows.Forms.FlowLayoutPanel
     $flow.Dock          = 'Fill'
     $flow.FlowDirection = 'TopDown'
     $flow.WrapContents  = $false
     $flow.AutoScroll    = $true
+    $flow.BackColor     = $script:Theme.Bg
     $flow.Padding       = New-Object System.Windows.Forms.Padding(12, 8, 12, 8)
 
     foreach ($e in $Menu) {
-        if ($e.Section) {
-            $lbl = New-Object System.Windows.Forms.Label
-            $lbl.Text      = $e.Section
-            $lbl.Font      = New-Object System.Drawing.Font('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)
-            $lbl.ForeColor = [System.Drawing.Color]::FromArgb(0, 90, 140)
-            $lbl.Width     = 480
-            $lbl.Height    = 26
-            $lbl.TextAlign = 'BottomLeft'
-            [void]$flow.Controls.Add($lbl)
-            continue
-        }
+        if ($e.Section) { Add-SectionHeader $flow $e.Section; continue }
         $btn = New-Object System.Windows.Forms.Button
         $btn.Text      = $e.Label
         $btn.Width     = 480
-        $btn.Height    = 32
+        $btn.Height    = 34
         $btn.TextAlign = 'MiddleLeft'
+        $btn.Padding   = New-Object System.Windows.Forms.Padding(12, 0, 0, 0)
+        $btn.Margin    = New-Object System.Windows.Forms.Padding(2, 2, 2, 2)
+        Set-FlatButton $btn
         $btn.Tag       = $e
         $btn.Add_Click({ Invoke-GuiAction $this.Tag })
         [void]$flow.Controls.Add($btn)
     }
 
-    $mode = if (Test-Admin) { 'АДМИН' } else { 'обычный пользователь' }
+    $isAdmin = Test-Admin
+    $mode = if ($isAdmin) { 'АДМИН' } else { 'обычный пользователь' }
     $head = New-Object System.Windows.Forms.Label
     $head.Dock      = 'Top'
-    $head.Height    = 26
+    $head.Height    = 30
     $head.TextAlign = 'MiddleLeft'
-    $head.Text      = "   Режим: $mode · v$Version"
-    $head.ForeColor = [System.Drawing.Color]::DimGray
+    $head.Text      = "   ●  Режим: $mode  ·  v$Version"
+    $head.Font      = $script:Theme.FontBold
+    $head.BackColor = $script:Theme.Bg
+    $head.ForeColor = if ($isAdmin) { $script:Theme.AccentText } else { $script:Theme.TextDim }
 
     $bar = New-Object System.Windows.Forms.FlowLayoutPanel
-    $bar.Dock    = 'Bottom'
-    $bar.Height  = 46
-    $bar.Padding = New-Object System.Windows.Forms.Padding(10, 8, 10, 8)
+    $bar.Dock      = 'Bottom'
+    $bar.Height    = 46
+    $bar.Padding   = New-Object System.Windows.Forms.Padding(10, 8, 10, 8)
+    $bar.BackColor = $script:Theme.Bg
 
-    $btnAdm  = New-Object System.Windows.Forms.Button; $btnAdm.Text  = 'От администратора'; $btnAdm.Width = 160
-    $btnExit = New-Object System.Windows.Forms.Button; $btnExit.Text = 'Выход';             $btnExit.Width = 90
+    $btnAdm  = New-Object System.Windows.Forms.Button; $btnAdm.Text  = 'От администратора'; $btnAdm.Width = 160; $btnAdm.Height = 28
+    $btnExit = New-Object System.Windows.Forms.Button; $btnExit.Text = 'Выход';             $btnExit.Width = 90;  $btnExit.Height = 28
+    Set-FlatButton $btnAdm
+    Set-FlatButton $btnExit
     $btnAdm.Add_Click({ Invoke-GuiAdminRestart })
     $btnExit.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
 
     # Если включено — пункт уходит в своё окно консоли, GUI не блокируется.
     $chkCon = New-Object System.Windows.Forms.CheckBox
-    $chkCon.Text   = 'Запускать в отдельной консоли'
-    $chkCon.Width  = 220
-    $chkCon.Height = 26
+    $chkCon.Text      = 'Запускать в отдельной консоли'
+    $chkCon.Width     = 220
+    $chkCon.Height    = 28
+    $chkCon.ForeColor = $script:Theme.Text
+    $chkCon.BackColor = $script:Theme.Bg
     $script:RunInConsole = $chkCon
 
     $bar.Controls.AddRange(@($btnAdm, $btnExit, $chkCon))
@@ -257,13 +367,15 @@ function Show-GuiMain {
     $log.Multiline  = $true
     $log.ReadOnly   = $true
     $log.ScrollBars = 'Vertical'
-    $log.BackColor  = [System.Drawing.Color]::FromArgb(30, 30, 30)
-    $log.ForeColor  = [System.Drawing.Color]::Gainsboro
-    $log.Font       = New-Object System.Drawing.Font('Consolas', 9)
+    $log.BorderStyle = 'FixedSingle'
+    $log.BackColor  = $script:Theme.ConsoleBg
+    $log.ForeColor  = $script:Theme.Text
+    $log.Font       = $script:Theme.Mono
     $script:LogBox  = $log
 
     $btnClr = New-Object System.Windows.Forms.Button
-    $btnClr.Text = 'Очистить лог'; $btnClr.Width = 120
+    $btnClr.Text = 'Очистить лог'; $btnClr.Width = 120; $btnClr.Height = 28
+    Set-FlatButton $btnClr
     $btnClr.Add_Click({ $log.Clear() }.GetNewClosure())
     $bar.Controls.Add($btnClr)
 
@@ -294,11 +406,13 @@ function Show-GuiStorageCalc {
     $f.StartPosition   = 'CenterScreen'
     $f.FormBorderStyle = 'FixedDialog'
     $f.MaximizeBox     = $false
+    Initialize-DarkForm $f
 
     $mk = {
         param($text, $top)
         $l = New-Object System.Windows.Forms.Label
         $l.Text = $text; $l.Left = 16; $l.Top = $top + 3; $l.Width = 155
+        Set-DarkLabel $l
         $f.Controls.Add($l)
     }.GetNewClosure()
     $num = {
@@ -306,6 +420,7 @@ function Show-GuiStorageCalc {
         $n = New-Object System.Windows.Forms.NumericUpDown
         $n.Left = 180; $n.Top = $top; $n.Width = 110
         $n.Minimum = $min; $n.Maximum = $max; $n.DecimalPlaces = $dec; $n.Value = $val
+        Set-DarkInput $n
         $f.Controls.Add($n); $n
     }.GetNewClosure()
     $cmb = {
@@ -314,6 +429,7 @@ function Show-GuiStorageCalc {
         $c.Left = 180; $c.Top = $top; $c.Width = 150; $c.DropDownStyle = 'DropDownList'
         foreach ($i in $items) { [void]$c.Items.Add($i) }
         $c.SelectedIndex = $idx
+        Set-DarkInput $c
         $f.Controls.Add($c); $c
     }.GetNewClosure()
 
@@ -327,36 +443,48 @@ function Show-GuiStorageCalc {
     & $mk 'Часов записи в сутки' 224; $nHrs = & $num 224 1 24 24 0
 
     $btnAuto = New-Object System.Windows.Forms.Button
-    $btnAuto.Text = 'Пересчитать битрейт'; $btnAuto.Left = 300; $btnAuto.Top = 193; $btnAuto.Width = 165
+    $btnAuto.Text = 'Пересчитать битрейт'; $btnAuto.Left = 300; $btnAuto.Top = 192; $btnAuto.Width = 165; $btnAuto.Height = 26
+    Set-FlatButton $btnAuto
     $f.Controls.Add($btnAuto)
 
     $grp = New-Object System.Windows.Forms.GroupBox
     $grp.Text = 'Что посчитать'; $grp.Left = 16; $grp.Top = 258; $grp.Width = 590; $grp.Height = 92
+    $grp.ForeColor = $script:Theme.AccentText
     $rbSpace = New-Object System.Windows.Forms.RadioButton
     $rbSpace.Text = 'Объём диска на N дней'; $rbSpace.Left = 14; $rbSpace.Top = 22; $rbSpace.Width = 200; $rbSpace.Checked = $true
+    $rbSpace.ForeColor = $script:Theme.Text
     $nDays = New-Object System.Windows.Forms.NumericUpDown
     $nDays.Left = 220; $nDays.Top = 20; $nDays.Width = 90; $nDays.Minimum = 1; $nDays.Maximum = 3650; $nDays.Value = 30
+    Set-DarkInput $nDays
     $rbTime = New-Object System.Windows.Forms.RadioButton
     $rbTime.Text = 'На сколько дней хватит'; $rbTime.Left = 14; $rbTime.Top = 54; $rbTime.Width = 200
+    $rbTime.ForeColor = $script:Theme.Text
     $nSize = New-Object System.Windows.Forms.NumericUpDown
     $nSize.Left = 220; $nSize.Top = 52; $nSize.Width = 90; $nSize.Minimum = 0.1; $nSize.Maximum = 100000
     $nSize.DecimalPlaces = 1; $nSize.Value = 4
+    Set-DarkInput $nSize
     $cUnit = New-Object System.Windows.Forms.ComboBox
     $cUnit.Left = 320; $cUnit.Top = 52; $cUnit.Width = 70; $cUnit.DropDownStyle = 'DropDownList'
     [void]$cUnit.Items.AddRange(@('TB', 'GB')); $cUnit.SelectedIndex = 0
+    Set-DarkInput $cUnit
     $grp.Controls.AddRange(@($rbSpace, $nDays, $rbTime, $nSize, $cUnit))
     $f.Controls.Add($grp)
 
     $out = New-Object System.Windows.Forms.TextBox
     $out.Left = 16; $out.Top = 360; $out.Width = 590; $out.Height = 148
     $out.Multiline = $true; $out.ReadOnly = $true; $out.ScrollBars = 'Vertical'
-    $out.Font = New-Object System.Drawing.Font('Consolas', 9)
+    $out.BorderStyle = 'FixedSingle'
+    $out.BackColor = $script:Theme.ConsoleBg
+    $out.ForeColor = $script:Theme.Text
+    $out.Font = $script:Theme.Mono
     $f.Controls.Add($out)
 
     $btnCalc = New-Object System.Windows.Forms.Button
     $btnCalc.Text = 'Посчитать'; $btnCalc.Left = 16; $btnCalc.Top = 518; $btnCalc.Width = 120; $btnCalc.Height = 28
+    Set-FlatButton $btnCalc -Primary
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = 'Закрыть'; $btnClose.Left = 490; $btnClose.Top = 518; $btnClose.Width = 116; $btnClose.Height = 28
+    Set-FlatButton $btnClose
     $btnClose.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
     $f.Controls.AddRange(@($btnCalc, $btnClose))
     $f.CancelButton = $btnClose
@@ -428,20 +556,27 @@ function Show-GuiNetwork {
     $f.Size          = New-Object System.Drawing.Size(840, 620)
     $f.MinimumSize   = New-Object System.Drawing.Size(660, 460)
     $f.StartPosition = 'CenterScreen'
+    Initialize-DarkForm $f
 
     $bar = New-Object System.Windows.Forms.Panel
     $bar.Dock = 'Top'; $bar.Height = 92
+    $bar.BackColor = $script:Theme.Bg
 
     $lbl = New-Object System.Windows.Forms.Label
     $lbl.Text = 'Хост / IP:'; $lbl.Left = 12; $lbl.Top = 16; $lbl.Width = 70
+    Set-DarkLabel $lbl
     $tbHost = New-Object System.Windows.Forms.TextBox
     $tbHost.Left = 84; $tbHost.Top = 13; $tbHost.Width = 190; $tbHost.Text = '8.8.8.8'
+    Set-DarkInput $tbHost
     $bar.Controls.AddRange(@($lbl, $tbHost))
 
     $out = New-Object System.Windows.Forms.TextBox
     $out.Dock = 'Fill'; $out.Multiline = $true; $out.ReadOnly = $true
     $out.ScrollBars = 'Both'; $out.WordWrap = $false
-    $out.Font = New-Object System.Drawing.Font('Consolas', 9)
+    $out.BorderStyle = 'None'
+    $out.BackColor = $script:Theme.ConsoleBg
+    $out.ForeColor = $script:Theme.Text
+    $out.Font = $script:Theme.Mono
 
     # Вывод идёт ПОТОКОМ, построчно (как в консоли): окно не «висит», результат
     # виден по мере поступления, а DoEvents оставляет форму отзывчивой.
@@ -464,6 +599,7 @@ function Show-GuiNetwork {
         param($text, $left, $top, $width, $action)
         $b = New-Object System.Windows.Forms.Button
         $b.Text = $text; $b.Left = $left; $b.Top = $top; $b.Width = $width; $b.Height = 26
+        Set-FlatButton $b
         $b.Add_Click($action)
         $bar.Controls.Add($b)
     }.GetNewClosure()
@@ -514,6 +650,7 @@ if (-not ('HH.Win32' -as [type])) {
     Add-Type -Namespace HH -Name Win32 -MemberDefinition @'
 [DllImport("kernel32.dll")] public static extern System.IntPtr GetConsoleWindow();
 [DllImport("user32.dll")]   public static extern bool ShowWindow(System.IntPtr hWnd, int nCmdShow);
+[DllImport("dwmapi.dll")]   public static extern int DwmSetWindowAttribute(System.IntPtr hwnd, int attr, ref int value, int size);
 '@ -ErrorAction SilentlyContinue
 }
 function Hide-ConsoleWindow {
