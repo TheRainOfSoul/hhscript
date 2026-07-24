@@ -128,14 +128,18 @@ function Add-SectionHeader($flow, $text) {
     $lbl.Height    = 26
     $lbl.TextAlign = 'BottomLeft'
     $lbl.Padding   = New-Object System.Windows.Forms.Padding(10, 0, 0, 0)   # текст вровень с текстом кнопок
-    $lbl.Margin    = New-Object System.Windows.Forms.Padding(2, 18, 2, 0)
+    $lbl.Margin    = New-Object System.Windows.Forms.Padding(0, 16, 0, 0)
     [void]$flow.Controls.Add($lbl)
     $div = New-Object System.Windows.Forms.Panel
     $div.Width     = 486
     $div.Height    = 1
     $div.BackColor = $script:Theme.Border
-    $div.Margin    = New-Object System.Windows.Forms.Padding(2, 3, 2, 8)
+    $div.Margin    = New-Object System.Windows.Forms.Padding(0, 3, 0, 8)
     [void]$flow.Controls.Add($div)
+    # Заголовок и разделитель занимают всю ширину строки, а кнопки секции
+    # начинаются с новой строки — секция всегда стоит колонкой(ами) под шапкой.
+    $flow.SetFlowBreak($lbl, $true)
+    $flow.SetFlowBreak($div, $true)
 }
 
 # --- Ядро: данные ($Menu, $Programs, ...) и функции из menu.ps1 ---
@@ -322,8 +326,8 @@ function Show-GuiMain {
 
     $flow = New-Object System.Windows.Forms.FlowLayoutPanel
     $flow.Dock          = 'Fill'
-    $flow.FlowDirection = 'TopDown'
-    $flow.WrapContents  = $false
+    $flow.FlowDirection = 'LeftToRight'   # кнопки идут слева направо и переносятся —
+    $flow.WrapContents  = $true           # чем шире окно, тем больше столбцов
     $flow.AutoScroll    = $true
     $flow.BackColor     = $script:Theme.Bg
     $flow.Padding       = New-Object System.Windows.Forms.Padding(14, 10, 14, 12)
@@ -332,11 +336,11 @@ function Show-GuiMain {
         if ($e.Section) { Add-SectionHeader $flow $e.Section; continue }
         $btn = New-Object System.Windows.Forms.Button
         $btn.Text      = $e.Label
-        $btn.Width     = 486
+        $btn.Width     = 486   # стартовая ширина; дальше её пересчитывает $reflow
         $btn.Height    = 36
         $btn.TextAlign = 'MiddleLeft'
         $btn.Padding   = New-Object System.Windows.Forms.Padding(10, 0, 0, 0)
-        $btn.Margin    = New-Object System.Windows.Forms.Padding(2, 2, 2, 3)
+        $btn.Margin    = New-Object System.Windows.Forms.Padding(0, 0, 8, 8)
         Set-FlatButton $btn
         $btn.Tag       = $e
         $btn.Add_Click({ Invoke-GuiAction $this.Tag })
@@ -415,6 +419,34 @@ function Show-GuiMain {
     $form.Controls.Add($log)    # Bottom — над панелью кнопок
     $form.Controls.Add($bar)    # Bottom — последним, докается первым (самый низ)
     $form.CancelButton = $btnExit
+
+    # --- Адаптивные столбцы: чем шире окно, тем больше кнопок в ряд ---
+    # Заголовки/разделители тянутся на всю доступную ширину, а кнопки делят её
+    # поровну между столбцами. $state.busy гасит повторный вход, когда изменение
+    # размера кнопок само вызывает SizeChanged (напр. из-за полосы прокрутки).
+    $state = @{ busy = $false }
+    $reflow = {
+        if ($state.busy) { return }
+        $state.busy = $true
+        $flow.SuspendLayout()
+        $avail = $flow.ClientSize.Width - $flow.Padding.Horizontal
+        if (-not $flow.VerticalScroll.Visible) {
+            $avail -= [System.Windows.Forms.SystemInformation]::VerticalScrollBarWidth
+        }
+        if ($avail -lt 120) { $avail = 120 }
+        $minBtn = 260; $gap = 8
+        $cols = [int][Math]::Max(1, [Math]::Floor(($avail + $gap) / ($minBtn + $gap)))
+        $btnW = [int][Math]::Floor($avail / $cols) - $gap
+        if ($btnW -lt 120) { $btnW = 120 }
+        foreach ($c in $flow.Controls) {
+            if ($c -is [System.Windows.Forms.Button]) { $c.Width = $btnW }
+            else { $c.Width = $avail - 2 }   # заголовок/разделитель — во всю ширину
+        }
+        $flow.ResumeLayout()
+        $state.busy = $false
+    }.GetNewClosure()
+    $flow.Add_SizeChanged($reflow)
+    $form.Add_Shown($reflow)
 
     # Пока открыт GUI, консольного окна не видно.
     Hide-ConsoleWindow
