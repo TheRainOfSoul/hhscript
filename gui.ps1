@@ -53,7 +53,10 @@ $script:Theme = @{
 # телом окна висела бы белая рамка. Обращение к .Handle создаёт нативный хэндл,
 # атрибут применяется до показа окна, поэтому мигания светлой рамкой нет.
 # [HH.Win32] определён ниже по файлу, но к моменту показа окон уже загружен.
-function Set-DarkTitleBar($form) {
+function Set-DarkTitleBar {
+    # Стайлинг окна, не системного состояния: ShouldProcess/-WhatIf тут не нужны.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
+    param($form)
     try {
         $v = 1
         # 20 = DWMWA_USE_IMMERSIVE_DARK_MODE; 19 — на ранних сборках Win10.
@@ -73,7 +76,10 @@ function Initialize-DarkForm($form) {
 
 # Плоская кнопка. -Primary — заливка акцентом (главное действие в окне);
 # без флага — «поверхность» с бирюзовой подсветкой при наведении.
-function Set-FlatButton($btn, [switch]$Primary) {
+function Set-FlatButton {
+    # Стайлинг контрола в памяти, не системного состояния: ShouldProcess не нужен.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
+    param($btn, [switch]$Primary)
     $btn.FlatStyle = 'Flat'
     $btn.FlatAppearance.BorderSize = 0
     $btn.Cursor = [System.Windows.Forms.Cursors]::Hand
@@ -92,14 +98,20 @@ function Set-FlatButton($btn, [switch]$Primary) {
 }
 
 # Тёмное поле ввода: TextBox / NumericUpDown / ComboBox.
-function Set-DarkInput($ctrl) {
+function Set-DarkInput {
+    # Стайлинг контрола в памяти, не системного состояния: ShouldProcess не нужен.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
+    param($ctrl)
     $ctrl.BackColor = $script:Theme.Surface
     $ctrl.ForeColor = $script:Theme.Text
     if ($ctrl -is [System.Windows.Forms.ComboBox]) { $ctrl.FlatStyle = 'Flat' }
     else { try { $ctrl.BorderStyle = 'FixedSingle' } catch { $null = $_ } }
 }
 
-function Set-DarkLabel($lbl) {
+function Set-DarkLabel {
+    # Стайлинг контрола в памяти, не системного состояния: ShouldProcess не нужен.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
+    param($lbl)
     $lbl.ForeColor = $script:Theme.Text
     $lbl.BackColor = [System.Drawing.Color]::Transparent
 }
