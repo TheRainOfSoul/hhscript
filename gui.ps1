@@ -44,9 +44,10 @@ $script:Theme = @{
     Border      = [System.Drawing.Color]::FromArgb(60, 60, 63)
     ConsoleBg   = [System.Drawing.Color]::FromArgb(24, 24, 24)     # лог и поля вывода
     PrimaryText = [System.Drawing.Color]::FromArgb(10, 22, 24)     # тёмный текст на бирюзовой кнопке
-    Font        = New-Object System.Drawing.Font('Segoe UI', 9)
-    FontBold    = New-Object System.Drawing.Font('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)
-    Mono        = New-Object System.Drawing.Font('Consolas', 9)
+    Font        = New-Object System.Drawing.Font('Segoe UI', 9.75)                                  # база: кнопки, поля
+    FontBold    = New-Object System.Drawing.Font('Segoe UI', 9.75, [System.Drawing.FontStyle]::Bold) # строка режима, главные кнопки
+    FontHeader  = New-Object System.Drawing.Font('Segoe UI', 10.5, [System.Drawing.FontStyle]::Bold) # заголовки секций/групп
+    Mono        = New-Object System.Drawing.Font('Consolas', 9.5)                                   # лог и поля вывода
 }
 
 # Тёмная системная рамка/заголовок окна (Win10 2004+/Win11). Без этого над тёмным
@@ -120,19 +121,20 @@ function Set-DarkLabel {
 function Add-SectionHeader($flow, $text) {
     $lbl = New-Object System.Windows.Forms.Label
     $lbl.Text      = $text.ToUpper()
-    $lbl.Font      = $script:Theme.FontBold
+    $lbl.Font      = $script:Theme.FontHeader
     $lbl.ForeColor = $script:Theme.AccentText
     $lbl.AutoSize  = $false
-    $lbl.Width     = 480
-    $lbl.Height    = 22
+    $lbl.Width     = 486
+    $lbl.Height    = 26
     $lbl.TextAlign = 'BottomLeft'
-    $lbl.Margin    = New-Object System.Windows.Forms.Padding(2, 14, 2, 0)
+    $lbl.Padding   = New-Object System.Windows.Forms.Padding(10, 0, 0, 0)   # текст вровень с текстом кнопок
+    $lbl.Margin    = New-Object System.Windows.Forms.Padding(2, 18, 2, 0)
     [void]$flow.Controls.Add($lbl)
     $div = New-Object System.Windows.Forms.Panel
-    $div.Width     = 480
+    $div.Width     = 486
     $div.Height    = 1
     $div.BackColor = $script:Theme.Border
-    $div.Margin    = New-Object System.Windows.Forms.Padding(2, 2, 2, 6)
+    $div.Margin    = New-Object System.Windows.Forms.Padding(2, 3, 2, 8)
     [void]$flow.Controls.Add($div)
 }
 
@@ -178,6 +180,10 @@ function Show-CheckList {
     $lv.BackColor     = $script:Theme.ConsoleBg
     $lv.ForeColor     = $script:Theme.Text
     $lv.Font          = $script:Theme.Font
+    # Пустой ImageList задаёт высоту строки — иначе строки с галочками слишком тесные.
+    $il = New-Object System.Windows.Forms.ImageList
+    $il.ImageSize     = New-Object System.Drawing.Size(1, 26)
+    $lv.SmallImageList = $il
     [void]$lv.Columns.Add('', 590)
 
     $group = $null
@@ -195,14 +201,14 @@ function Show-CheckList {
 
     $bar = New-Object System.Windows.Forms.FlowLayoutPanel
     $bar.Dock      = 'Bottom'
-    $bar.Height    = 46
-    $bar.Padding   = New-Object System.Windows.Forms.Padding(8, 8, 8, 8)
+    $bar.Height    = 52
+    $bar.Padding   = New-Object System.Windows.Forms.Padding(10, 10, 10, 10)
     $bar.BackColor = $script:Theme.Bg
 
-    $btnOk   = New-Object System.Windows.Forms.Button; $btnOk.Text   = 'Применить';    $btnOk.Width   = 110; $btnOk.Height   = 30
-    $btnCan  = New-Object System.Windows.Forms.Button; $btnCan.Text  = 'Отмена';       $btnCan.Width  = 90;  $btnCan.Height  = 30
-    $btnAll  = New-Object System.Windows.Forms.Button; $btnAll.Text  = 'Отметить всё'; $btnAll.Width  = 120; $btnAll.Height  = 30
-    $btnNone = New-Object System.Windows.Forms.Button; $btnNone.Text = 'Снять всё';    $btnNone.Width = 100; $btnNone.Height = 30
+    $btnOk   = New-Object System.Windows.Forms.Button; $btnOk.Text   = 'Применить';    $btnOk.Width   = 112; $btnOk.Height   = 32
+    $btnCan  = New-Object System.Windows.Forms.Button; $btnCan.Text  = 'Отмена';       $btnCan.Width  = 92;  $btnCan.Height  = 32
+    $btnAll  = New-Object System.Windows.Forms.Button; $btnAll.Text  = 'Отметить всё'; $btnAll.Width  = 122; $btnAll.Height  = 32
+    $btnNone = New-Object System.Windows.Forms.Button; $btnNone.Text = 'Снять всё';    $btnNone.Width = 102; $btnNone.Height = 32
     Set-FlatButton $btnOk -Primary
     Set-FlatButton $btnCan
     Set-FlatButton $btnAll
@@ -320,17 +326,17 @@ function Show-GuiMain {
     $flow.WrapContents  = $false
     $flow.AutoScroll    = $true
     $flow.BackColor     = $script:Theme.Bg
-    $flow.Padding       = New-Object System.Windows.Forms.Padding(12, 8, 12, 8)
+    $flow.Padding       = New-Object System.Windows.Forms.Padding(14, 10, 14, 12)
 
     foreach ($e in $Menu) {
         if ($e.Section) { Add-SectionHeader $flow $e.Section; continue }
         $btn = New-Object System.Windows.Forms.Button
         $btn.Text      = $e.Label
-        $btn.Width     = 480
-        $btn.Height    = 34
+        $btn.Width     = 486
+        $btn.Height    = 36
         $btn.TextAlign = 'MiddleLeft'
-        $btn.Padding   = New-Object System.Windows.Forms.Padding(12, 0, 0, 0)
-        $btn.Margin    = New-Object System.Windows.Forms.Padding(2, 2, 2, 2)
+        $btn.Padding   = New-Object System.Windows.Forms.Padding(10, 0, 0, 0)
+        $btn.Margin    = New-Object System.Windows.Forms.Padding(2, 2, 2, 3)
         Set-FlatButton $btn
         $btn.Tag       = $e
         $btn.Add_Click({ Invoke-GuiAction $this.Tag })
@@ -341,7 +347,7 @@ function Show-GuiMain {
     $mode = if ($isAdmin) { 'АДМИН' } else { 'обычный пользователь' }
     $head = New-Object System.Windows.Forms.Label
     $head.Dock      = 'Top'
-    $head.Height    = 30
+    $head.Height    = 34
     $head.TextAlign = 'MiddleLeft'
     $head.Text      = "   ●  Режим: $mode  ·  v$Version"
     $head.Font      = $script:Theme.FontBold
@@ -350,12 +356,12 @@ function Show-GuiMain {
 
     $bar = New-Object System.Windows.Forms.FlowLayoutPanel
     $bar.Dock      = 'Bottom'
-    $bar.Height    = 46
-    $bar.Padding   = New-Object System.Windows.Forms.Padding(10, 8, 10, 8)
+    $bar.Height    = 52
+    $bar.Padding   = New-Object System.Windows.Forms.Padding(10, 10, 10, 10)
     $bar.BackColor = $script:Theme.Bg
 
-    $btnAdm  = New-Object System.Windows.Forms.Button; $btnAdm.Text  = 'От администратора'; $btnAdm.Width = 160; $btnAdm.Height = 28
-    $btnExit = New-Object System.Windows.Forms.Button; $btnExit.Text = 'Выход';             $btnExit.Width = 90;  $btnExit.Height = 28
+    $btnAdm  = New-Object System.Windows.Forms.Button; $btnAdm.Text  = 'От администратора'; $btnAdm.Width = 160; $btnAdm.Height = 32
+    $btnExit = New-Object System.Windows.Forms.Button; $btnExit.Text = 'Выход';             $btnExit.Width = 90;  $btnExit.Height = 32
     Set-FlatButton $btnAdm
     Set-FlatButton $btnExit
     $btnAdm.Add_Click({ Invoke-GuiAdminRestart })
@@ -365,7 +371,9 @@ function Show-GuiMain {
     $chkCon = New-Object System.Windows.Forms.CheckBox
     $chkCon.Text      = 'Запускать в отдельной консоли'
     $chkCon.Width     = 220
-    $chkCon.Height    = 28
+    $chkCon.Height    = 32
+    $chkCon.TextAlign = 'MiddleLeft'
+    $chkCon.Margin    = New-Object System.Windows.Forms.Padding(8, 3, 3, 3)
     $chkCon.ForeColor = $script:Theme.Text
     $chkCon.BackColor = $script:Theme.Bg
     $script:RunInConsole = $chkCon
@@ -386,15 +394,26 @@ function Show-GuiMain {
     $script:LogBox  = $log
 
     $btnClr = New-Object System.Windows.Forms.Button
-    $btnClr.Text = 'Очистить лог'; $btnClr.Width = 120; $btnClr.Height = 28
+    $btnClr.Text = 'Очистить лог'; $btnClr.Width = 120; $btnClr.Height = 32
     Set-FlatButton $btnClr
     $btnClr.Add_Click({ $log.Clear() }.GetNewClosure())
     $bar.Controls.Add($btnClr)
 
+    # Подпись над журналом.
+    $cap = New-Object System.Windows.Forms.Label
+    $cap.Dock      = 'Bottom'
+    $cap.Height    = 22
+    $cap.Text      = '   Журнал'
+    $cap.TextAlign = 'MiddleLeft'
+    $cap.Font      = $script:Theme.FontBold
+    $cap.ForeColor = $script:Theme.TextDim
+    $cap.BackColor = $script:Theme.Bg
+
     $form.Controls.Add($flow)   # Fill — первым
     $form.Controls.Add($head)   # Top
-    $form.Controls.Add($log)    # Bottom (над панелью кнопок)
-    $form.Controls.Add($bar)    # Bottom — последним, докается первым
+    $form.Controls.Add($cap)    # Bottom — подпись, окажется над логом
+    $form.Controls.Add($log)    # Bottom — над панелью кнопок
+    $form.Controls.Add($bar)    # Bottom — последним, докается первым (самый низ)
     $form.CancelButton = $btnExit
 
     # Пока открыт GUI, консольного окна не видно.
@@ -423,14 +442,15 @@ function Show-GuiStorageCalc {
     $mk = {
         param($text, $top)
         $l = New-Object System.Windows.Forms.Label
-        $l.Text = $text; $l.Left = 16; $l.Top = $top + 3; $l.Width = 155
+        $l.Text = $text; $l.Left = 18; $l.Top = $top; $l.Width = 158; $l.Height = 23
+        $l.AutoSize = $false; $l.TextAlign = 'MiddleLeft'   # текст по центру строки поля
         Set-DarkLabel $l
         $f.Controls.Add($l)
     }.GetNewClosure()
     $num = {
         param($top, $min, $max, $val, $dec)
         $n = New-Object System.Windows.Forms.NumericUpDown
-        $n.Left = 180; $n.Top = $top; $n.Width = 110
+        $n.Left = 185; $n.Top = $top; $n.Width = 110
         $n.Minimum = $min; $n.Maximum = $max; $n.DecimalPlaces = $dec; $n.Value = $val
         Set-DarkInput $n
         $f.Controls.Add($n); $n
@@ -438,7 +458,7 @@ function Show-GuiStorageCalc {
     $cmb = {
         param($top, $items, $idx)
         $c = New-Object System.Windows.Forms.ComboBox
-        $c.Left = 180; $c.Top = $top; $c.Width = 150; $c.DropDownStyle = 'DropDownList'
+        $c.Left = 185; $c.Top = $top; $c.Width = 150; $c.DropDownStyle = 'DropDownList'
         foreach ($i in $items) { [void]$c.Items.Add($i) }
         $c.SelectedIndex = $idx
         Set-DarkInput $c
@@ -570,17 +590,24 @@ function Show-GuiNetwork {
     $f.StartPosition = 'CenterScreen'
     Initialize-DarkForm $f
 
-    $bar = New-Object System.Windows.Forms.Panel
-    $bar.Dock = 'Top'; $bar.Height = 92
-    $bar.BackColor = $script:Theme.Bg
-
+    # Строка «Хост / IP» — отдельная панель сверху.
+    $hostPanel = New-Object System.Windows.Forms.Panel
+    $hostPanel.Dock = 'Top'; $hostPanel.Height = 44
+    $hostPanel.BackColor = $script:Theme.Bg
     $lbl = New-Object System.Windows.Forms.Label
-    $lbl.Text = 'Хост / IP:'; $lbl.Left = 12; $lbl.Top = 16; $lbl.Width = 70
+    $lbl.Text = 'Хост / IP:'; $lbl.Left = 12; $lbl.Top = 12; $lbl.Width = 72; $lbl.Height = 23
+    $lbl.TextAlign = 'MiddleLeft'
     Set-DarkLabel $lbl
     $tbHost = New-Object System.Windows.Forms.TextBox
-    $tbHost.Left = 84; $tbHost.Top = 13; $tbHost.Width = 190; $tbHost.Text = '8.8.8.8'
+    $tbHost.Left = 88; $tbHost.Top = 10; $tbHost.Width = 200; $tbHost.Text = '8.8.8.8'
     Set-DarkInput $tbHost
-    $bar.Controls.AddRange(@($lbl, $tbHost))
+    $hostPanel.Controls.AddRange(@($lbl, $tbHost))
+
+    # Ряд кнопок — FlowLayoutPanel с равными интервалами (переносится по ширине окна).
+    $btnRow = New-Object System.Windows.Forms.FlowLayoutPanel
+    $btnRow.Dock = 'Top'; $btnRow.Height = 80; $btnRow.WrapContents = $true
+    $btnRow.BackColor = $script:Theme.Bg
+    $btnRow.Padding = New-Object System.Windows.Forms.Padding(8, 6, 8, 6)
 
     $out = New-Object System.Windows.Forms.TextBox
     $out.Dock = 'Fill'; $out.Multiline = $true; $out.ReadOnly = $true
@@ -608,16 +635,17 @@ function Show-GuiNetwork {
     }.GetNewClosure()
 
     $addBtn = {
-        param($text, $left, $top, $width, $action)
+        param($text, $width, $action)
         $b = New-Object System.Windows.Forms.Button
-        $b.Text = $text; $b.Left = $left; $b.Top = $top; $b.Width = $width; $b.Height = 26
+        $b.Text = $text; $b.Width = $width; $b.Height = 30
+        $b.Margin = New-Object System.Windows.Forms.Padding(0, 0, 6, 4)
         Set-FlatButton $b
         $b.Add_Click($action)
-        $bar.Controls.Add($b)
+        $btnRow.Controls.Add($b)
     }.GetNewClosure()
 
-    & $addBtn 'ipconfig /all' 12 52 120 { & $run 'ipconfig /all' { ipconfig /all } }.GetNewClosure()
-    & $addBtn 'Адаптеры' 138 52 100 {
+    & $addBtn 'ipconfig /all' 118 { & $run 'ipconfig /all' { ipconfig /all } }.GetNewClosure()
+    & $addBtn 'Адаптеры' 96 {
         & $run 'Адаптеры' {
             Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object Status -EQ 'Up' | ForEach-Object {
                 $ip = (Get-NetIPAddress -InterfaceIndex $_.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
@@ -628,27 +656,28 @@ function Show-GuiNetwork {
     }.GetNewClosure()
     # ping.exe/tracert -d вместо Test-Connection: выводят построчно и без
     # медленного разрешения имён — результат идёт сразу, а не через 10-15 секунд.
-    & $addBtn 'Ping' 244 52 80 {
+    & $addBtn 'Ping' 78 {
         & $run "ping $($tbHost.Text)" { ping.exe -n 4 $tbHost.Text }
     }.GetNewClosure()
-    & $addBtn 'Tracert' 330 52 90 {
+    & $addBtn 'Tracert' 88 {
         & $run "tracert $($tbHost.Text)" { tracert.exe -d $tbHost.Text }
     }.GetNewClosure()
-    & $addBtn 'DNS → 1.1.1.1' 426 52 125 {
+    & $addBtn 'DNS → 1.1.1.1' 122 {
         Switch-Dns '1.1.1.1', '1.0.0.1'; & $run 'DNS' { Get-DnsClientServerAddress -AddressFamily IPv4 | Format-Table -AutoSize }
     }.GetNewClosure()
-    & $addBtn 'DNS → 8.8.8.8' 557 52 125 {
+    & $addBtn 'DNS → 8.8.8.8' 122 {
         Switch-Dns '8.8.8.8', '8.8.4.4'; & $run 'DNS' { Get-DnsClientServerAddress -AddressFamily IPv4 | Format-Table -AutoSize }
     }.GetNewClosure()
-    & $addBtn 'DNS → авто' 688 52 110 {
+    & $addBtn 'DNS → авто' 108 {
         Switch-Dns @(); & $run 'DNS' { Get-DnsClientServerAddress -AddressFamily IPv4 | Format-Table -AutoSize }
     }.GetNewClosure()
-    & $addBtn 'Сброс сети (нужен админ)' 300 12 190 {
+    & $addBtn 'Сброс сети (нужен админ)' 190 {
         Repair-Network; & $run 'Сброс сети' { 'Выполнено. Подробности — в окне консоли. Требуется перезагрузка.' }
     }.GetNewClosure()
 
-    $f.Controls.Add($out)
-    $f.Controls.Add($bar)
+    $f.Controls.Add($out)       # Fill — первым
+    $f.Controls.Add($btnRow)    # Top — ряд кнопок
+    $f.Controls.Add($hostPanel) # Top — добавлен последним, окажется сверху
     [void]$f.ShowDialog()
     $f.Dispose()
 }
