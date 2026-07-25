@@ -190,18 +190,43 @@ function Show-CheckList {
     $lv.SmallImageList = $il
     [void]$lv.Columns.Add('', 590)
 
-    $group = $null
-    for ($i = 0; $i -lt $Items.Count; $i++) {
-        if ($Headers -and $Headers.ContainsKey($i)) {
-            $group = New-Object System.Windows.Forms.ListViewGroup($Headers[$i])
-            [void]$lv.Groups.Add($group)
+    # Состояние галочек храним отдельно от видимых строк: фильтр прячет строки,
+    # но отметки скрытых пунктов не теряются. Ключ — исходный индекс пункта.
+    $checkState = @{}
+    for ($i = 0; $i -lt $Items.Count; $i++) { $checkState[$i] = $DefaultChecked }
+    $st = @{ rebuilding = $false }
+
+    # Перестроить список под текст фильтра. Группы создаём лениво — пустые
+    # (без видимых пунктов) не показываем.
+    $rebuild = {
+        param($filter)
+        $st.rebuilding = $true
+        $lv.BeginUpdate()
+        $lv.Items.Clear()
+        $lv.Groups.Clear()
+        $needle = ([string]$filter).Trim().ToLower()
+        $grpText = $null; $grpObj = $null
+        for ($i = 0; $i -lt $Items.Count; $i++) {
+            if ($Headers -and $Headers.ContainsKey($i)) { $grpText = $Headers[$i]; $grpObj = $null }
+            if ($needle -and ($Items[$i].ToLower().IndexOf($needle) -lt 0)) { continue }
+            $row = New-Object System.Windows.Forms.ListViewItem($Items[$i])
+            $row.Tag = $i
+            if ($grpText) {
+                if (-not $grpObj) { $grpObj = New-Object System.Windows.Forms.ListViewGroup($grpText); [void]$lv.Groups.Add($grpObj) }
+                $row.Group = $grpObj
+            }
+            [void]$lv.Items.Add($row)
+            $row.Checked = [bool]$checkState[$i]
         }
-        $row = New-Object System.Windows.Forms.ListViewItem($Items[$i])
-        $row.Tag     = $i
-        $row.Checked = $DefaultChecked
-        if ($group) { $row.Group = $group }
-        [void]$lv.Items.Add($row)
-    }
+        $lv.EndUpdate()
+        $st.rebuilding = $false
+    }.GetNewClosure()
+
+    # Пользователь щёлкнул галочку — запоминаем (но не во время перестройки списка).
+    $lv.Add_ItemChecked({
+        param($sender, $e)
+        if (-not $st.rebuilding) { $checkState[[int]$e.Item.Tag] = $e.Item.Checked }
+    }.GetNewClosure())
 
     $bar = New-Object System.Windows.Forms.FlowLayoutPanel
     $bar.Dock      = 'Bottom'
@@ -223,16 +248,30 @@ function Show-CheckList {
     $btnAll.Add_Click({  foreach ($x in $lv.Items) { $x.Checked = $true } }.GetNewClosure())
     $btnNone.Add_Click({ foreach ($x in $lv.Items) { $x.Checked = $false } }.GetNewClosure())
 
+    # Поле фильтра сверху: печатаешь — список сужается по подстроке.
+    $top = New-Object System.Windows.Forms.Panel
+    $top.Dock = 'Top'; $top.Height = 38; $top.BackColor = $script:Theme.Bg
+    $lblF = New-Object System.Windows.Forms.Label
+    $lblF.Text = 'Фильтр:'; $lblF.Left = 10; $lblF.Top = 9; $lblF.Width = 54; $lblF.Height = 22
+    $lblF.TextAlign = 'MiddleLeft'; Set-DarkLabel $lblF
+    $search = New-Object System.Windows.Forms.TextBox
+    $search.Left = 66; $search.Top = 7; $search.Width = 548; $search.Height = 24
+    $search.Anchor = 'Top, Left, Right'
+    Set-DarkInput $search
+    $search.Add_TextChanged({ & $rebuild $search.Text }.GetNewClosure())
+    $top.Controls.AddRange(@($lblF, $search))
+
     $bar.Controls.AddRange(@($btnOk, $btnCan, $btnAll, $btnNone))
+    & $rebuild ''                # первичное заполнение списка
     $form.Controls.Add($lv)      # Fill добавляем первым
-    $form.Controls.Add($bar)     # Bottom — последним (докается первым)
-    $form.AcceptButton = $btnOk
-    $form.CancelButton = $btnCan
+    $form.Controls.Add($bar)     # Bottom
+    $form.Controls.Add($top)     # Top — добавлен последним, окажется сверху
+    $form.CancelButton = $btnCan  # AcceptButton не ставим: Enter в поле фильтра не должен «Применить»
 
     $res = $form.ShowDialog()
     $sel = @()
     if ($res -eq [System.Windows.Forms.DialogResult]::OK) {
-        foreach ($x in $lv.CheckedItems) { $sel += [int]$x.Tag }
+        for ($i = 0; $i -lt $Items.Count; $i++) { if ($checkState[$i]) { $sel += $i } }
     }
     $form.Dispose()
     if ($res -ne [System.Windows.Forms.DialogResult]::OK) { return $null }
