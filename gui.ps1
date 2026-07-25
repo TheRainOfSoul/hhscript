@@ -224,7 +224,7 @@ function Show-CheckList {
 
     # Пользователь щёлкнул галочку — запоминаем (но не во время перестройки списка).
     $lv.Add_ItemChecked({
-        param($sender, $e)
+        param($src, $e)
         if (-not $st.rebuilding) { $checkState[[int]$e.Item.Tag] = $e.Item.Checked }
     }.GetNewClosure())
 
