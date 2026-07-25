@@ -29,7 +29,7 @@ $Programs = @(
     @{ Name = 'qBittorrent';          Winget = 'qBittorrent.qBittorrent';         Url = 'https://www.qbittorrent.org/download' }
     @{ Name = 'Notepad++';            Winget = 'Notepad++.Notepad++';             Url = 'https://notepad-plus-plus.org/downloads/' }
     # --- Удалёнка / доступ ---
-    @{ Group = 'Удалёнка / доступ'; Name = 'AnyDesk';              Winget = 'AnyDeskSoftwareGmbH.AnyDesk';      Url = 'https://anydesk.com/download' }
+    @{ Group = 'Удалёнка / доступ'; Name = 'AnyDesk';              Winget = 'AnyDesk.AnyDesk';                  Url = 'https://anydesk.com/download' }
     @{ Name = 'TightVNC';             Winget = 'GlavSoft.TightVNC';               Url = 'https://www.tightvnc.com/download.php' }
     @{ Name = 'mRemoteNG';            Winget = 'mRemoteNG.mRemoteNG';             Url = 'https://mremoteng.org/download' }
     @{ Name = 'MobaXterm';            Winget = 'Mobatek.MobaXterm';               Url = 'https://mobaxterm.mobatek.net/download.html' }
@@ -131,31 +131,60 @@ function Invoke-Remote {
 # (Server Core, часть LTSC) честно вернёт $false — вызвавший код уйдёт на Url/сайт.
 $script:WingetTried = $false
 function Install-Winget {
-    # 1) App Installer уже в системе, но не зарегистрирован для пользователя.
+    if (Get-Command winget -ErrorAction SilentlyContinue) { return $true }
+
+    # Архитектура ОС (для пакетов зависимостей). Именно ОС, а не процесса:
+    # 32-битный PowerShell на x64 всё равно должен ставить x64-зависимости.
+    $arch = if ($env:PROCESSOR_ARCHITECTURE -match 'ARM64' -or $env:PROCESSOR_ARCHITEW6432 -match 'ARM64') { 'arm64' }
+    elseif ([Environment]::Is64BitOperatingSystem) { 'x64' } else { 'x86' }
+
+    # 1) App Installer есть в системе, но не зарегистрирован для пользователя.
     try {
         $pkg = Get-AppxPackage -Name Microsoft.DesktopAppInstaller -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($pkg -and $pkg.InstallLocation) {
-            Add-AppxPackage -DisableDevelopmentMode -Register (Join-Path $pkg.InstallLocation 'AppXManifest.xml') -ErrorAction SilentlyContinue
+            Add-AppxPackage -DisableDevelopmentMode -Register (Join-Path $pkg.InstallLocation 'AppXManifest.xml') -ErrorAction Stop
             if (Get-Command winget -ErrorAction SilentlyContinue) { return $true }
         }
-    } catch { $null = $_ }
+    } catch { Write-Host "   (перерегистрация App Installer не помогла: $($_.Exception.Message))" -ForegroundColor DarkGray }
 
-    # 2) Скачать и поставить App Installer с зависимостями (официальные ссылки).
+    # 2) Скачать App Installer с зависимостями и поставить. Ошибки НЕ глушим —
+    #    иначе на объекте не понять, почему не встал.
+    $tmp = Join-Path $env:TEMP 'hh-winget'
+    try { New-Item -ItemType Directory -Force -Path $tmp | Out-Null } catch { $null = $_ }
+    $wc  = New-Object System.Net.WebClient
+    $get = {
+        param($url, $file)
+        $dst = Join-Path $tmp $file
+        $wc.DownloadFile($url, $dst)
+        return $dst
+    }.GetNewClosure()
+
+    # Зависимости: VCLibs (обязателен) + UI.Xaml 2.8 (нужен новым сборкам).
+    $deps = @(
+        @{ Url = "https://aka.ms/Microsoft.VCLibs.$arch.14.00.Desktop.appx"; File = 'vclibs.appx' }
+        @{ Url = "https://github.com/microsoft/microsoft-ui-xaml/releases/download/v2.8.6/Microsoft.UI.Xaml.2.8.$arch.appx"; File = 'xaml.appx' }
+    )
+    foreach ($d in $deps) {
+        try { Add-AppxPackage -Path (& $get $d.Url $d.File) -ErrorAction Stop }
+        catch { Write-Host "   Зависимость $($d.File): $($_.Exception.Message)" -ForegroundColor DarkGray }
+    }
+
+    # Сам App Installer (msixbundle с официального редиректа aka.ms/getwinget).
+    $bundle = $null
+    try { $bundle = & $get 'https://aka.ms/getwinget' 'winget.msixbundle' }
+    catch { Write-Host "   Не удалось скачать App Installer: $($_.Exception.Message)" -ForegroundColor Red; return $false }
     try {
-        $tmp = Join-Path $env:TEMP 'hh-winget'
-        New-Item -ItemType Directory -Force -Path $tmp | Out-Null
-        $wc  = New-Object System.Net.WebClient
-        $get = {
-            param($url, $file)
-            $dst = Join-Path $tmp $file
-            $wc.DownloadFile($url, $dst)
-            return $dst
-        }.GetNewClosure()
-        # VCLibs обязателен; UI.Xaml нужен новым сборкам (не критичен — в try).
-        try { Add-AppxPackage -Path (& $get 'https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx' 'vclibs.appx') -ErrorAction SilentlyContinue } catch { $null = $_ }
-        try { Add-AppxPackage -Path (& $get 'https://github.com/microsoft/microsoft-ui-xaml/releases/download/v2.8.6/Microsoft.UI.Xaml.2.8.x64.appx' 'xaml.appx') -ErrorAction SilentlyContinue } catch { $null = $_ }
-        Add-AppxPackage -Path (& $get 'https://aka.ms/getwinget' 'winget.msixbundle') -ErrorAction SilentlyContinue
-    } catch { $null = $_ }
+        Add-AppxPackage -Path $bundle -ErrorAction Stop
+    } catch {
+        Write-Host "   Установка для пользователя не удалась: $($_.Exception.Message)" -ForegroundColor Yellow
+        # Fallback: провизионинг для всех пользователей (нужен админ; надёжнее в elevated).
+        if (Test-Admin) {
+            try {
+                Write-Host "   Пробую установить для всех (провизионинг, DISM)..." -ForegroundColor DarkGray
+                Add-AppxProvisionedPackage -Online -PackagePath $bundle -SkipLicense -ErrorAction Stop | Out-Null
+            } catch { Write-Host "   Провизионинг не удался: $($_.Exception.Message)" -ForegroundColor Red }
+        }
+    }
 
     # winget.exe появляется alias-ом в WindowsApps — добавим в PATH текущего сеанса,
     # чтобы Get-Command нашёл его без перезапуска PowerShell.
@@ -839,7 +868,7 @@ function Invoke-NewPC {
     # 1/4 — программы
     Write-Host "`n  [1/4] Установка программ (Chrome, 7-Zip, AnyDesk)..." -ForegroundColor Cyan
     if (Confirm-Winget) {
-        foreach ($id in 'Google.Chrome', '7zip.7zip', 'AnyDeskSoftwareGmbH.AnyDesk') {
+        foreach ($id in 'Google.Chrome', '7zip.7zip', 'AnyDesk.AnyDesk') {
             Write-Host "   winget: $id" -ForegroundColor DarkGray
             winget install --id $id -e --source winget --accept-package-agreements --accept-source-agreements
         }
