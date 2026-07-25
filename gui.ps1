@@ -866,8 +866,8 @@ function Show-GuiNetwork {
 function Show-GuiNetworkScan {
     $f = New-Object System.Windows.Forms.Form
     $f.Text          = 'Сканер сети'
-    $f.Size          = New-Object System.Drawing.Size(740, 560)
-    $f.MinimumSize   = New-Object System.Drawing.Size(560, 400)
+    $f.Size          = New-Object System.Drawing.Size(800, 560)
+    $f.MinimumSize   = New-Object System.Drawing.Size(600, 400)
     $f.StartPosition = 'CenterScreen'
     Initialize-DarkForm $f
 
@@ -885,11 +885,30 @@ function Show-GuiNetworkScan {
     $btnScan = New-Object System.Windows.Forms.Button
     $btnScan.Text = 'Сканировать'; $btnScan.Left = 290; $btnScan.Top = 9; $btnScan.Width = 130; $btnScan.Height = 28
     Set-FlatButton $btnScan -Primary
+    $btnDb = New-Object System.Windows.Forms.Button
+    $btnDb.Text = 'Обновить базу'; $btnDb.Left = 426; $btnDb.Top = 9; $btnDb.Width = 130; $btnDb.Height = 28
+    Set-FlatButton $btnDb
     $status = New-Object System.Windows.Forms.Label
-    $status.Left = 430; $status.Top = 12; $status.Width = 290; $status.Height = 23; $status.TextAlign = 'MiddleLeft'
+    $status.Left = 564; $status.Top = 12; $status.Width = 220; $status.Height = 23; $status.TextAlign = 'MiddleLeft'
     $status.Anchor = 'Top, Left, Right'
     Set-DarkLabel $status
-    $bar.Controls.AddRange(@($lbl, $tb, $suffix, $btnScan, $status))
+    # Принудительно перекачать базу вендоров (удобно скачать заранее в офисе).
+    $btnDb.Add_Click({
+        $status.Text = 'Обновляю базу вендоров...'
+        $btnDb.Enabled = $false
+        $f.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+        $f.Refresh(); [System.Windows.Forms.Application]::DoEvents()
+        try {
+            Get-OuiDatabase -Force | Out-Null
+            $status.Text = "База вендоров: $(Get-OuiCount) записей"
+        } catch {
+            $status.Text = 'Не удалось обновить базу'
+        } finally {
+            $btnDb.Enabled = $true
+            $f.Cursor = [System.Windows.Forms.Cursors]::Default
+        }
+    }.GetNewClosure())
+    $bar.Controls.AddRange(@($lbl, $tb, $suffix, $btnScan, $btnDb, $status))
 
     $lv = New-Object System.Windows.Forms.ListView
     $lv.Dock = 'Fill'; $lv.View = 'Details'; $lv.FullRowSelect = $true

@@ -1185,13 +1185,78 @@ $script:OuiVendors = @{
     '00:1B:21' = 'Intel'; '3C:FD:FE' = 'Intel'; 'A0:36:9F' = 'Intel'; '00:E0:4C' = 'Realtek'
     '00:0C:29' = 'VMware'; '00:50:56' = 'VMware'; '00:05:69' = 'VMware'; '00:15:5D' = 'Hyper-V'; '52:54:00' = 'QEMU/KVM'
 }
+# Полная база OUI (Wireshark manuf): скачивается один раз, кэш в %LOCALAPPDATA%,
+# обновляется раз в 30 дней и парсится в память при первом обращении. Поддержаны
+# блоки MA-L/MA-M/MA-S (маски /24, /28, /36). Нет интернета/файла — вернём пустую
+# базу, и Get-MacVendor уйдёт на встроенную таблицу. Одна попытка загрузки за сеанс.
+$script:OuiDb = $null
+function Get-OuiDatabase {
+    param([switch]$Force)
+    $file = Join-Path (Join-Path $env:LOCALAPPDATA 'HHToolbox') 'manuf.txt'
+    if ($Force) {
+        try { if (Test-Path $file) { Remove-Item $file -Force -ErrorAction SilentlyContinue } } catch { $null = $_ }
+        $script:OuiDb = $null
+    }
+    if ($null -ne $script:OuiDb) { return $script:OuiDb }
+    $script:OuiDb = @{ Oui24 = @{}; Fine = @{} }   # непустой маркер => повторно за сеанс не качаем
+    try {
+        $stale = (-not (Test-Path $file)) -or (((Get-Date) - (Get-Item $file).LastWriteTime).TotalDays -gt 30)
+        if ($stale) {
+            New-Item -ItemType Directory -Force -Path (Split-Path $file -Parent) | Out-Null
+            $oldPP = $ProgressPreference; $ProgressPreference = 'SilentlyContinue'
+            try { Invoke-WebRequest -Uri 'https://www.wireshark.org/download/automated/data/manuf' -OutFile $file -TimeoutSec 20 -UseBasicParsing }
+            finally { $ProgressPreference = $oldPP }
+        }
+        if (Test-Path $file) {
+            foreach ($line in [IO.File]::ReadAllLines($file)) {
+                if (-not $line -or $line[0] -eq '#') { continue }
+                $p = $line -split "`t"
+                if ($p.Count -lt 2 -or -not $p[1]) { continue }
+                $name = if ($p.Count -ge 3 -and $p[2]) { $p[2].Trim() } else { $p[1].Trim() }
+                $bits = 24
+                if ($p[0] -match '/(\d+)\s*$') { $bits = [int]$Matches[1] }
+                $hex = ((($p[0] -replace '/.*$', '') -replace '[:.\-]', '')).ToUpper()
+                if ($hex.Length -lt 6) { continue }
+                $grp = $hex.Substring(0, 6)
+                if ($bits -le 24) {
+                    $script:OuiDb.Oui24[$grp] = $name
+                } else {
+                    $nib = [int][math]::Floor($bits / 4)
+                    if ($hex.Length -lt $nib) { continue }
+                    if (-not $script:OuiDb.Fine.ContainsKey($grp)) { $script:OuiDb.Fine[$grp] = New-Object System.Collections.Generic.List[object] }
+                    $script:OuiDb.Fine[$grp].Add([pscustomobject]@{ Len = $nib; Prefix = $hex.Substring(0, $nib); Vendor = $name })
+                }
+            }
+        }
+    } catch { $null = $_ }
+    return $script:OuiDb
+}
+
+# Число записей в загруженной базе (для статуса в окне сканера).
+function Get-OuiCount {
+    $db = Get-OuiDatabase
+    $fine = 0; foreach ($v in $db.Fine.Values) { $fine += $v.Count }
+    return ($db.Oui24.Count + $fine)
+}
+
+# Вендор по MAC: сперва встроенная таблица (чистые имена Dahua/Hikvision/...),
+# затем полная база Wireshark, иначе «—».
 function Get-MacVendor {
     param([string]$Mac)
     if (-not $Mac) { return '' }
-    $oui = ($Mac -replace '[-.]', ':').ToUpper()
-    if ($oui.Length -lt 8) { return '—' }
-    $v = $script:OuiVendors[$oui.Substring(0, 8)]
-    if ($v) { $v } else { '—' }
+    $norm = ($Mac -replace '[-.: ]', '').ToUpper()
+    if ($norm.Length -lt 6) { return '—' }
+    $grp = $norm.Substring(0, 6)
+    $key = $grp.Substring(0, 2) + ':' + $grp.Substring(2, 2) + ':' + $grp.Substring(4, 2)
+    if ($script:OuiVendors.ContainsKey($key)) { return $script:OuiVendors[$key] }
+    $db = Get-OuiDatabase
+    if ($db.Fine.ContainsKey($grp)) {
+        foreach ($e in ($db.Fine[$grp] | Sort-Object Len -Descending)) {
+            if ($norm.Length -ge $e.Len -and $norm.Substring(0, $e.Len) -eq $e.Prefix) { return $e.Vendor }
+        }
+    }
+    if ($db.Oui24.ContainsKey($grp)) { return $db.Oui24[$grp] }
+    return '—'
 }
 
 # База подсети (первые три октета) активного адаптера, напр. "192.168.1".
