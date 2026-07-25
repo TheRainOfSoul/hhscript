@@ -124,6 +124,59 @@ function Invoke-Remote {
     }
 }
 
+# --- Автоустановка winget (App Installer), если его нет --------------
+# На чистой/LTSC Windows winget часто отсутствует и установки молча падают.
+# Confirm-Winget вызывается перед winget-операциями: один раз за сеанс пытается
+# поставить App Installer и обновляет $HasWinget. На системах без Appx-подсистемы
+# (Server Core, часть LTSC) честно вернёт $false — вызвавший код уйдёт на Url/сайт.
+$script:WingetTried = $false
+function Install-Winget {
+    # 1) App Installer уже в системе, но не зарегистрирован для пользователя.
+    try {
+        $pkg = Get-AppxPackage -Name Microsoft.DesktopAppInstaller -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($pkg -and $pkg.InstallLocation) {
+            Add-AppxPackage -DisableDevelopmentMode -Register (Join-Path $pkg.InstallLocation 'AppXManifest.xml') -ErrorAction SilentlyContinue
+            if (Get-Command winget -ErrorAction SilentlyContinue) { return $true }
+        }
+    } catch { $null = $_ }
+
+    # 2) Скачать и поставить App Installer с зависимостями (официальные ссылки).
+    try {
+        $tmp = Join-Path $env:TEMP 'hh-winget'
+        New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+        $wc  = New-Object System.Net.WebClient
+        $get = {
+            param($url, $file)
+            $dst = Join-Path $tmp $file
+            $wc.DownloadFile($url, $dst)
+            return $dst
+        }.GetNewClosure()
+        # VCLibs обязателен; UI.Xaml нужен новым сборкам (не критичен — в try).
+        try { Add-AppxPackage -Path (& $get 'https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx' 'vclibs.appx') -ErrorAction SilentlyContinue } catch { $null = $_ }
+        try { Add-AppxPackage -Path (& $get 'https://github.com/microsoft/microsoft-ui-xaml/releases/download/v2.8.6/Microsoft.UI.Xaml.2.8.x64.appx' 'xaml.appx') -ErrorAction SilentlyContinue } catch { $null = $_ }
+        Add-AppxPackage -Path (& $get 'https://aka.ms/getwinget' 'winget.msixbundle') -ErrorAction SilentlyContinue
+    } catch { $null = $_ }
+
+    # winget.exe появляется alias-ом в WindowsApps — добавим в PATH текущего сеанса,
+    # чтобы Get-Command нашёл его без перезапуска PowerShell.
+    $wa = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps'
+    if (($env:Path -split ';') -notcontains $wa) { $env:Path = "$env:Path;$wa" }
+    return [bool](Get-Command winget -ErrorAction SilentlyContinue)
+}
+
+# Гарантировать winget перед winget-операцией. Возвращает $true, если доступен.
+function Confirm-Winget {
+    if (Get-Command winget -ErrorAction SilentlyContinue) { $script:HasWinget = $true; return $true }
+    if ($script:WingetTried) { return $false }   # уже пробовали в этом сеансе — не долбим
+    $script:WingetTried = $true
+    Write-Host "`n   winget не найден — пробую установить App Installer..." -ForegroundColor Yellow
+    $ok = Install-Winget
+    $script:HasWinget = $ok
+    if ($ok) { Write-Host "   winget установлен." -ForegroundColor Green }
+    else { Write-Host "   Не удалось поставить winget. Где возможно — установлю через сайт." -ForegroundColor Yellow }
+    return $ok
+}
+
 # Установить один пункт: winget (Winget или WingetList), сайт (Url) или DISM
 # (Action='netfx3'). Возвращает $true при успехе, $false при проблеме — для сводки.
 function Install-Item {
@@ -138,7 +191,7 @@ function Install-Item {
         return (Get-YadiskFile -PublicUrl $p.Yadisk -Name $p.File)
     }
     $ids = if ($p.WingetList) { $p.WingetList } elseif ($p.Winget) { @($p.Winget) } else { @() }
-    if ($ids.Count -and $HasWinget) {
+    if ($ids.Count -and (Confirm-Winget)) {
         $ok = $true
         Write-Host "`n   Установка '$($p.Name)'..." -ForegroundColor Green
         foreach ($id in $ids) {
@@ -600,7 +653,7 @@ function Open-DriverPage {
 }
 
 function Install-DellDriver {
-    if (-not $HasWinget) { Write-Host "   Нужен winget для Dell Command Update." -ForegroundColor Yellow; return }
+    if (-not (Confirm-Winget)) { Write-Host "   Нужен winget для Dell Command Update." -ForegroundColor Yellow; return }
     Write-Host "   Установка Dell Command Update (официальный инструмент Dell)..." -ForegroundColor DarkGray
     winget install --id Dell.CommandUpdate.Universal -e --source winget --accept-package-agreements --accept-source-agreements
     $dcu = @("$env:ProgramFiles\Dell\CommandUpdate\dcu-cli.exe", "${env:ProgramFiles(x86)}\Dell\CommandUpdate\dcu-cli.exe") |
@@ -612,7 +665,7 @@ function Install-DellDriver {
 }
 
 function Install-HpDriver {
-    if (-not $HasWinget) { Write-Host "   Нужен winget для HP Image Assistant." -ForegroundColor Yellow; return }
+    if (-not (Confirm-Winget)) { Write-Host "   Нужен winget для HP Image Assistant." -ForegroundColor Yellow; return }
     Write-Host "   Установка HP Image Assistant (HPIA)..." -ForegroundColor DarkGray
     winget install --id HP.ImageAssistant -e --source winget --accept-package-agreements --accept-source-agreements
     $hpia = @("$env:ProgramFiles\HP\HPIA\HPImageAssistant.exe", "${env:ProgramFiles(x86)}\HP\HPIA\HPImageAssistant.exe", "$env:ProgramData\HP\HPIA\HPImageAssistant.exe") |
@@ -630,7 +683,7 @@ function Install-HpDriver {
 }
 
 function Install-LenovoDriver {
-    if (-not $HasWinget) { Write-Host "   Нужен winget для Lenovo Thin Installer." -ForegroundColor Yellow; return }
+    if (-not (Confirm-Winget)) { Write-Host "   Нужен winget для Lenovo Thin Installer." -ForegroundColor Yellow; return }
     Write-Host "   Установка Lenovo Thin Installer..." -ForegroundColor DarkGray
     winget install --id Lenovo.ThinInstaller -e --source winget --accept-package-agreements --accept-source-agreements
     $ti = @("${env:ProgramFiles(x86)}\Lenovo\ThinInstaller\ThinInstaller.exe", "$env:ProgramFiles\Lenovo\ThinInstaller\ThinInstaller.exe") |
@@ -645,7 +698,7 @@ function Install-LenovoDriver {
 }
 
 function Install-IntelDriver {
-    if (-not $HasWinget) { Write-Host "   Нужен winget для Intel DSA." -ForegroundColor Yellow; return }
+    if (-not (Confirm-Winget)) { Write-Host "   Нужен winget для Intel DSA." -ForegroundColor Yellow; return }
     Write-Host "   Установка Intel Driver & Support Assistant..." -ForegroundColor DarkGray
     winget install --id Intel.IntelDriverAndSupportAssistant -e --source winget --accept-package-agreements --accept-source-agreements
     Write-Host "   У Intel нет тихого CLI — открываю DSA для сканирования и установки..." -ForegroundColor Yellow
@@ -705,7 +758,7 @@ function Invoke-NewPC {
     Add-RestorePoint 'Перед настройкой Новый ПК (HH Toolbox)'
     # 1/4 — программы
     Write-Host "`n  [1/4] Установка программ (Chrome, 7-Zip, AnyDesk)..." -ForegroundColor Cyan
-    if ($HasWinget) {
+    if (Confirm-Winget) {
         foreach ($id in 'Google.Chrome', '7zip.7zip', 'AnyDeskSoftwareGmbH.AnyDesk') {
             Write-Host "   winget: $id" -ForegroundColor DarkGray
             winget install --id $id -e --source winget --accept-package-agreements --accept-source-agreements
@@ -1020,7 +1073,7 @@ function Repair-System {
 }
 
 function Invoke-WingetUpgrade {
-    if ($HasWinget) {
+    if (Confirm-Winget) {
         Write-Host "`n   Обновление всего установленного софта..." -ForegroundColor Green
         winget upgrade --all --include-unknown --accept-package-agreements --accept-source-agreements
     } else { Write-Host "`n   winget не найден." -ForegroundColor Yellow }
