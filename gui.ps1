@@ -859,9 +859,84 @@ function Show-GuiNetwork {
     $f.Dispose()
 }
 
+# =====================================================================
+#  2c. Сканер сети — окно со списком найденных устройств.
+#  Считает теми же Get-LanBase / Get-LanDevices из menu.ps1.
+# =====================================================================
+function Show-GuiNetworkScan {
+    $f = New-Object System.Windows.Forms.Form
+    $f.Text          = 'Сканер сети'
+    $f.Size          = New-Object System.Drawing.Size(740, 560)
+    $f.MinimumSize   = New-Object System.Drawing.Size(560, 400)
+    $f.StartPosition = 'CenterScreen'
+    Initialize-DarkForm $f
+
+    $bar = New-Object System.Windows.Forms.Panel
+    $bar.Dock = 'Top'; $bar.Height = 44; $bar.BackColor = $script:Theme.Bg
+    $lbl = New-Object System.Windows.Forms.Label
+    $lbl.Text = 'Подсеть:'; $lbl.Left = 12; $lbl.Top = 12; $lbl.Width = 62; $lbl.Height = 23; $lbl.TextAlign = 'MiddleLeft'
+    Set-DarkLabel $lbl
+    $tb = New-Object System.Windows.Forms.TextBox
+    $tb.Left = 78; $tb.Top = 10; $tb.Width = 150; $tb.Text = (Get-LanBase)
+    Set-DarkInput $tb
+    $suffix = New-Object System.Windows.Forms.Label
+    $suffix.Text = '.1-254'; $suffix.Left = 230; $suffix.Top = 12; $suffix.Width = 52; $suffix.Height = 23; $suffix.TextAlign = 'MiddleLeft'
+    Set-DarkLabel $suffix
+    $btnScan = New-Object System.Windows.Forms.Button
+    $btnScan.Text = 'Сканировать'; $btnScan.Left = 290; $btnScan.Top = 9; $btnScan.Width = 130; $btnScan.Height = 28
+    Set-FlatButton $btnScan -Primary
+    $status = New-Object System.Windows.Forms.Label
+    $status.Left = 430; $status.Top = 12; $status.Width = 290; $status.Height = 23; $status.TextAlign = 'MiddleLeft'
+    $status.Anchor = 'Top, Left, Right'
+    Set-DarkLabel $status
+    $bar.Controls.AddRange(@($lbl, $tb, $suffix, $btnScan, $status))
+
+    $lv = New-Object System.Windows.Forms.ListView
+    $lv.Dock = 'Fill'; $lv.View = 'Details'; $lv.FullRowSelect = $true
+    $lv.BorderStyle = 'None'; $lv.BackColor = $script:Theme.ConsoleBg; $lv.ForeColor = $script:Theme.Text; $lv.Font = $script:Theme.Font
+    [void]$lv.Columns.Add('IP', 150)
+    [void]$lv.Columns.Add('MAC', 175)
+    [void]$lv.Columns.Add('Вендор', 110)
+    [void]$lv.Columns.Add('Имя', 260)
+
+    $btnScan.Add_Click({
+        $base = $tb.Text.Trim()
+        $status.Text = "Сканирую $base.1-254 ..."
+        $btnScan.Enabled = $false
+        $f.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+        $f.Refresh(); [System.Windows.Forms.Application]::DoEvents()
+        try {
+            $devs = Get-LanDevices -Base $base
+            $lv.BeginUpdate(); $lv.Items.Clear()
+            foreach ($d in $devs) {
+                $it = New-Object System.Windows.Forms.ListViewItem($d.IP)
+                [void]$it.SubItems.Add($(if ($d.MAC) { $d.MAC } else { '—' }))
+                [void]$it.SubItems.Add($d.Vendor)
+                [void]$it.SubItems.Add($d.Name)
+                # Камеры (Dahua/Hikvision/Uniview/Axis) подсветим акцентом.
+                if (@('Dahua', 'Hikvision', 'Uniview', 'Axis') -contains $d.Vendor) { $it.ForeColor = $script:Theme.AccentText }
+                [void]$lv.Items.Add($it)
+            }
+            $lv.EndUpdate()
+            $status.Text = "Найдено: $($devs.Count)"
+        } catch {
+            $status.Text = 'Ошибка: ' + $_.Exception.Message
+        } finally {
+            $btnScan.Enabled = $true
+            $f.Cursor = [System.Windows.Forms.Cursors]::Default
+        }
+    }.GetNewClosure())
+
+    $f.Controls.Add($lv)
+    $f.Controls.Add($bar)
+    [void]$f.ShowDialog()
+    $f.Dispose()
+}
+
 # --- Подменяем консольные версии оконными ($Menu менять не нужно) ---
 function Show-StorageCalc { Show-GuiStorageCalc }
 function Show-NetworkMenu { Show-GuiNetwork }
+function Show-NetworkScan { Show-GuiNetworkScan }
 
 # --- Управление окном консоли (скрыть/показать) ---
 if (-not ('HH.Win32' -as [type])) {

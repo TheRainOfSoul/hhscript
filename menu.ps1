@@ -1085,10 +1085,124 @@ function Invoke-WingetUpgrade {
 #  Поля: Section — заголовок; Label + Action — пункт; Admin=$true — нужен
 #  админ (предложит перезапуск); Color — цвет номера.
 # =====================================================================
+# =====================================================================
+#  Сканер сети — найти устройства в подсети (IP / MAC / вендор / имя).
+#  Вендор определяется по OUI (первые 3 байта MAC). Таблица — подборка под
+#  CCTV/сети (Dahua, Hikvision, Uniview, Axis, TP-Link, MikroTik, Ubiquiti,
+#  виртуалки), не полная база IEEE: неизвестный бренд покажет «—».
+# =====================================================================
+$script:OuiVendors = @{
+    '3C:EF:8C' = 'Dahua'; '90:02:A9' = 'Dahua'; 'E0:50:8B' = 'Dahua'; 'BC:32:5F' = 'Dahua'; '4C:11:BF' = 'Dahua'
+    '08:ED:ED' = 'Dahua'; '14:A7:8B' = 'Dahua'; 'A0:BD:1D' = 'Dahua'; '38:AF:29' = 'Dahua'; '24:52:6A' = 'Dahua'
+    '44:19:B6' = 'Hikvision'; '4C:BD:8F' = 'Hikvision'; '28:57:BE' = 'Hikvision'; 'C0:56:E3' = 'Hikvision'
+    'BC:AD:28' = 'Hikvision'; '54:C4:15' = 'Hikvision'; 'A4:14:37' = 'Hikvision'; '18:80:25' = 'Hikvision'
+    '58:03:FB' = 'Hikvision'; 'E0:BA:AD' = 'Hikvision'; '24:28:FD' = 'Hikvision'
+    '48:EA:63' = 'Uniview'
+    '00:40:8C' = 'Axis'; 'AC:CC:8E' = 'Axis'; 'B8:A4:4F' = 'Axis'
+    '50:C7:BF' = 'TP-Link'; 'F4:F2:6D' = 'TP-Link'; '14:CC:20' = 'TP-Link'; 'EC:08:6B' = 'TP-Link'
+    '4C:5E:0C' = 'MikroTik'; '64:D1:54' = 'MikroTik'; 'CC:2D:E0' = 'MikroTik'; '48:8F:5A' = 'MikroTik'; 'DC:2C:6E' = 'MikroTik'
+    '24:A4:3C' = 'Ubiquiti'; '44:D9:E7' = 'Ubiquiti'; '78:8A:20' = 'Ubiquiti'; 'FC:EC:DA' = 'Ubiquiti'; 'E0:63:DA' = 'Ubiquiti'
+    '00:1B:21' = 'Intel'; '3C:FD:FE' = 'Intel'; 'A0:36:9F' = 'Intel'; '00:E0:4C' = 'Realtek'
+    '00:0C:29' = 'VMware'; '00:50:56' = 'VMware'; '00:05:69' = 'VMware'; '00:15:5D' = 'Hyper-V'; '52:54:00' = 'QEMU/KVM'
+}
+function Get-MacVendor {
+    param([string]$Mac)
+    if (-not $Mac) { return '' }
+    $oui = ($Mac -replace '[-.]', ':').ToUpper()
+    if ($oui.Length -lt 8) { return '—' }
+    $v = $script:OuiVendors[$oui.Substring(0, 8)]
+    if ($v) { $v } else { '—' }
+}
+
+# База подсети (первые три октета) активного адаптера, напр. "192.168.1".
+function Get-LanBase {
+    try {
+        $cfg = Get-NetIPConfiguration -ErrorAction SilentlyContinue |
+            Where-Object { $_.IPv4DefaultGateway -and $_.NetAdapter.Status -eq 'Up' } | Select-Object -First 1
+        $ip = ($cfg.IPv4Address | Select-Object -First 1).IPAddress
+        if ($ip -match '^(\d+\.\d+\.\d+)\.\d+$') { return $Matches[1] }
+    } catch { $null = $_ }
+    try {
+        $ip = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+            Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } |
+            Select-Object -First 1).IPAddress
+        if ($ip -match '^(\d+\.\d+\.\d+)\.\d+$') { return $Matches[1] }
+    } catch { $null = $_ }
+    return '192.168.1'
+}
+
+# Просканировать /24 и вернуть устройства: IP / MAC / Vendor / Name.
+function Get-LanDevices {
+    param([string]$Base)
+    if (-not $Base) { $Base = Get-LanBase }
+    $Base = $Base.Trim().TrimEnd('.')
+    # 1) асинхронный ping всех адресов — находит живых и наполняет ARP-кэш.
+    $pings = 1..254 | ForEach-Object {
+        [pscustomobject]@{ IP = "$Base.$_"; Task = (New-Object System.Net.NetworkInformation.Ping).SendPingAsync("$Base.$_", 500) }
+    }
+    try { [System.Threading.Tasks.Task]::WaitAll(@($pings.Task), 4000) | Out-Null } catch { $null = $_ }
+    $alive = New-Object System.Collections.Generic.HashSet[string]
+    foreach ($x in $pings) {
+        try { if ($x.Task.Status -eq 'RanToCompletion' -and $x.Task.Result.Status -eq 'Success') { [void]$alive.Add($x.IP) } } catch { $null = $_ }
+    }
+    # 2) MAC из таблицы соседей (или arp -a). Часть камер молчит на ICMP, но после
+    #    запроса всё равно оседает в ARP — их тоже покажем. ВАЖНО: берём только
+    #    записи с реальным MAC (Reachable/Stale/Permanent) — иначе пинг-свип
+    #    оставит по записи на каждый адрес с нулевым MAC. Плюс отсекаем
+    #    нулевой/широковещательный/мультикастовый MAC.
+    $mac = @{}
+    $bad = @('00:00:00:00:00:00', 'FF:FF:FF:FF:FF:FF')
+    try {
+        Get-NetNeighbor -AddressFamily IPv4 -ErrorAction Stop |
+            Where-Object { $_.IPAddress -like "$Base.*" -and (([string]$_.State) -in @('Reachable', 'Stale', 'Permanent')) } |
+            ForEach-Object {
+                $m = (([string]$_.LinkLayerAddress) -replace '-', ':').ToUpper()
+                if ($m -match '^[0-9A-F]{2}(:[0-9A-F]{2}){5}$' -and $bad -notcontains $m -and $m -notlike '01:00:5E:*') { $mac[$_.IPAddress] = $m }
+            }
+    } catch {
+        arp.exe -a | ForEach-Object {
+            if ($_ -match '^\s*(\d+\.\d+\.\d+\.\d+)\s+([0-9A-Fa-f]{2}(?:-[0-9A-Fa-f]{2}){5})') {
+                $ip = $Matches[1]; $m = ($Matches[2] -replace '-', ':').ToUpper()
+                if ($ip -like "$Base.*" -and $bad -notcontains $m -and $m -notlike '01:00:5E:*') { $mac[$ip] = $m }
+            }
+        }
+    }
+    # 3) объединить IP из ping и из ARP, отсортировать по адресу.
+    foreach ($k in $mac.Keys) { [void]$alive.Add($k) }
+    $ips = @($alive) | Sort-Object { [version]$_ }
+    if (-not $ips) { return @() }
+    # 4) обратный DNS — асинхронно, общий лимит ~1.5с (кто не успел — без имени).
+    $dns = foreach ($ip in $ips) { [pscustomobject]@{ IP = $ip; Task = [System.Net.Dns]::GetHostEntryAsync($ip) } }
+    try { [System.Threading.Tasks.Task]::WaitAll(@($dns.Task), 1500) | Out-Null } catch { $null = $_ }
+    $name = @{}
+    foreach ($d in $dns) { try { if ($d.Task.Status -eq 'RanToCompletion') { $name[$d.IP] = $d.Task.Result.HostName } } catch { $null = $_ } }
+    foreach ($ip in $ips) {
+        $m = [string]$mac[$ip]
+        [pscustomobject]@{ IP = $ip; MAC = $m; Vendor = (Get-MacVendor $m); Name = [string]$name[$ip] }
+    }
+}
+
+# CLI-версия сканера (в GUI подменяется окном Show-GuiNetworkScan).
+function Show-NetworkScan {
+    $base = Get-LanBase
+    $inp = (Read-Host "   Подсеть [$base]").Trim()
+    if ($inp) { $base = $inp }
+    Write-Host "`n   Сканирую $base.1-254 (несколько секунд)..." -ForegroundColor Green
+    $devs = Get-LanDevices -Base $base
+    if (-not $devs) { Write-Host "   Устройств не найдено." -ForegroundColor Yellow; return }
+    Write-Host ("`n   {0,-16}{1,-20}{2,-12}{3}" -f 'IP', 'MAC', 'Вендор', 'Имя') -ForegroundColor Cyan
+    foreach ($d in $devs) {
+        $macShow = if ($d.MAC) { $d.MAC } else { '—' }
+        Write-Host ("   {0,-16}{1,-20}{2,-12}{3}" -f $d.IP, $macShow, $d.Vendor, $d.Name)
+    }
+    Write-Host "`n   Найдено устройств: $($devs.Count)" -ForegroundColor Green
+}
+
 $Menu = @(
     @{ Section = 'Диагностика и сеть' }
     @{ Label = 'Информация о ПК';                                 Action = { Show-PCInfo; Wait-Continue } }
     @{ Label = 'Сетевые утилиты (DNS, ping, сброс сети)';         Action = { Show-NetworkMenu } }
+    @{ Label = 'Сканер сети (найти камеры/устройства)';           Action = { Show-NetworkScan; Wait-Continue } }
     @{ Label = 'Калькулятор диска и полосы (клон Dahua Basic)';   Action = { Show-StorageCalc; Wait-Continue } }
     @{ Label = 'Стресс-тест ПК (CPU-прожиг + OCCT/FurMark/диск)'; Action = { Invoke-Remote 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/scripts/stresstest.ps1'; Wait-Continue } }
     @{ Section = 'Программы' }
