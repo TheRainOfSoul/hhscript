@@ -1110,38 +1110,30 @@ function Invoke-SophiApp {
     else { Write-Host "   SophiApp.exe не найден после распаковки." -ForegroundColor Yellow }
 }
 
-# Скачать последний релиз Sophia Script под ТЕКУЩУЮ ОС (Win10/Win11, обычный
-# вариант для Windows PowerShell 5.1), распаковать и запустить Sophia.ps1 в
-# отдельной видимой консоли от админа. Без выбора версии — всегда свежий.
+# Sophia Script через официальный Wrapper (GUI). Сырой Sophia.ps1 не годится для
+# автозапуска: он требует, чтобы ВОШЕДШИЙ юзер был локальным админом (иначе
+# отказывается), и применяет твики без ревью. Wrapper — это GUI: сам берёт нужную
+# под ОС версию, сам разбирается с правами, а твики выбираются галочками.
+# Качаем последний Wrapper из релиза, распаковываем, запускаем SophiaScriptWrapper.exe.
 function Invoke-SophiaScript {
-    try {
-        $rel = Invoke-RestMethod 'https://api.github.com/repos/farag2/Sophia-Script-for-Windows/releases/latest' -Headers @{ 'User-Agent' = 'HHToolbox' }
-    } catch { Write-Host "   Не удалось получить релиз Sophia Script: $($_.Exception.Message)" -ForegroundColor Red; return }
-
-    $osTag = if ([Environment]::OSVersion.Version.Build -ge 22000) { 'Windows.11' } else { 'Windows.10' }
-    $asset = $rel.assets | Where-Object {
-        $_.name -like "*$osTag*" -and $_.name -like '*.zip' -and
-        $_.name -notlike '*LTSC*' -and $_.name -notlike '*Arm*' -and
-        $_.name -notlike '*PowerShell.7*' -and $_.name -notlike '*Wrapper*'
-    } | Select-Object -First 1
-    if (-not $asset) { Write-Host "   Не нашёл сборку Sophia Script под $osTag." -ForegroundColor Yellow; return }
-
-    $dir = Join-Path $env:LOCALAPPDATA 'HHToolbox\SophiaScript'
-    if (Test-Path $dir) { Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue }   # всегда свежий
-    Write-Host "`n   Скачиваю $($asset.name)..." -ForegroundColor Green
-    try {
-        $zip = Join-Path $env:TEMP 'sophiascript.zip'
-        $wc = New-Object System.Net.WebClient
-        try { $wc.DownloadFile($asset.browser_download_url, $zip) } finally { $wc.Dispose() }
-        Expand-Archive -Path $zip -DestinationPath $dir -Force
-        Remove-Item $zip -Force -ErrorAction SilentlyContinue
-    } catch { Write-Host "   Ошибка загрузки: $($_.Exception.Message)" -ForegroundColor Red; return }
-
-    $ps1 = Get-ChildItem $dir -Recurse -Filter 'Sophia.ps1' -ErrorAction SilentlyContinue | Select-Object -First 1
-    if (-not $ps1) { Write-Host "   Sophia.ps1 не найден после распаковки." -ForegroundColor Yellow; return }
-    Write-Host "   Запускаю Sophia Script в отдельной консоли (от админа)..." -ForegroundColor Cyan
-    Start-Process powershell -Verb RunAs -WorkingDirectory $ps1.DirectoryName -ArgumentList @(
-        '-NoExit', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $ps1.FullName)
+    $dir = Join-Path $env:LOCALAPPDATA 'HHToolbox\SophiaWrapper'
+    $exe = Get-ChildItem $dir -Recurse -Filter 'SophiaScriptWrapper.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $exe) {
+        Write-Host "`n   Скачиваю Sophia Script (Wrapper)..." -ForegroundColor Green
+        try {
+            $rel = Invoke-RestMethod 'https://api.github.com/repos/farag2/Sophia-Script-for-Windows/releases/latest' -Headers @{ 'User-Agent' = 'HHToolbox' }
+            $url = ($rel.assets | Where-Object { $_.name -like '*Wrapper*.zip' } | Select-Object -First 1).browser_download_url
+            if (-not $url) { Write-Host "   Wrapper не найден в релизе." -ForegroundColor Yellow; return }
+            $zip = Join-Path $env:TEMP 'sophiawrapper.zip'
+            $wc = New-Object System.Net.WebClient
+            try { $wc.DownloadFile($url, $zip) } finally { $wc.Dispose() }
+            Expand-Archive -Path $zip -DestinationPath $dir -Force
+            Remove-Item $zip -Force -ErrorAction SilentlyContinue
+            $exe = Get-ChildItem $dir -Recurse -Filter 'SophiaScriptWrapper.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+        } catch { Write-Host "   Ошибка загрузки: $($_.Exception.Message)" -ForegroundColor Red; return }
+    }
+    if ($exe) { Write-Host "   Запускаю Sophia Script (Wrapper)..." -ForegroundColor Cyan; Start-Process $exe.FullName }
+    else { Write-Host "   SophiaScriptWrapper.exe не найден после распаковки." -ForegroundColor Yellow }
 }
 
 function Show-UtilityMenu {
