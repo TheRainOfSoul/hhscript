@@ -1321,6 +1321,34 @@ function Show-NetworkScan {
     Write-Host "`n   Найдено устройств: $($devs.Count)" -ForegroundColor Green
 }
 
+# Полный скан портов устройства через RustScan в ОТДЕЛЬНОЙ консоли: скан всех
+# 65535 портов ~30с — окно утилит им не блокируем. Если rustscan нет — ставим
+# через winget (bee-san.RustScan). Хост передаём переменной окружения (данные,
+# не код — без инъекций). Флаг -g: только порты, без nmap.
+function Invoke-RustScan {
+    param($HostTarget)
+    $h = ([string]$HostTarget).Trim()
+    if (-not $h) { Write-Host "   Укажи хост/IP." -ForegroundColor Yellow; return }
+    $env:HH_RSHOST = $h
+    $inner = @'
+$ErrorActionPreference = 'Continue'
+$rs = (Get-Command rustscan -ErrorAction SilentlyContinue).Source
+if (-not $rs) {
+    Write-Host 'Устанавливаю RustScan (winget)...' -ForegroundColor Yellow
+    winget install --id bee-san.RustScan -e --source winget --accept-package-agreements --accept-source-agreements
+    $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')
+    $rs = (Get-Command rustscan -ErrorAction SilentlyContinue).Source
+}
+if ($rs) {
+    Write-Host "RustScan $env:HH_RSHOST - все порты, подождите..." -ForegroundColor Cyan
+    & $rs -a $env:HH_RSHOST -g --ulimit 5000
+} else { Write-Host 'RustScan установить не удалось.' -ForegroundColor Red }
+Write-Host ''; Write-Host 'Готово. Окно можно закрыть.' -ForegroundColor Green
+'@
+    $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($inner))
+    Start-Process powershell -ArgumentList '-NoExit', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $enc
+}
+
 $Menu = @(
     @{ Section = 'Диагностика и сеть' }
     @{ Label = 'Информация о ПК';                                 Action = { Show-PCInfo; Wait-Continue } }

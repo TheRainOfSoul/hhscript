@@ -847,6 +847,9 @@ function Show-GuiNetwork {
         }
     }.GetNewClosure()
 
+    # Полный скан портов через RustScan — в отдельной консоли (не морозит окно).
+    & $addBtn 'RustScan порты' 130 { Invoke-RustScan $tbHost.Text }.GetNewClosure()
+
     & $addBtn 'Сброс сети (нужен админ)' 190 {
         Repair-Network; & $run 'Сброс сети' { 'Выполнено. Подробности — в окне консоли. Требуется перезагрузка.' }
     }.GetNewClosure()
@@ -917,6 +920,30 @@ function Show-GuiNetworkScan {
     [void]$lv.Columns.Add('MAC', 175)
     [void]$lv.Columns.Add('Вендор', 110)
     [void]$lv.Columns.Add('Имя', 260)
+
+    # Копирование: ПКМ — ячейка под курсором или вся строка; Ctrl+C — строка.
+    $hit = @{ item = $null; sub = $null }
+    $lv.Add_MouseDown({
+        if ($_.Button -eq [System.Windows.Forms.MouseButtons]::Right) {
+            $h = $lv.HitTest($_.Location); $hit.item = $h.Item; $hit.sub = $h.SubItem
+        }
+    }.GetNewClosure())
+    $copy = {
+        param($t)
+        if ($t) { try { [System.Windows.Forms.Clipboard]::SetText([string]$t) } catch { $null = $_ } }
+    }.GetNewClosure()
+    $rowText = { param($it) ($it.SubItems | ForEach-Object { $_.Text }) -join "`t" }.GetNewClosure()
+    $cm = New-Object System.Windows.Forms.ContextMenuStrip
+    $miCell = $cm.Items.Add('Копировать ячейку')
+    $miCell.Add_Click({ if ($hit.sub) { & $copy $hit.sub.Text } }.GetNewClosure())
+    $miRow = $cm.Items.Add('Копировать строку')
+    $miRow.Add_Click({ if ($hit.item) { & $copy (& $rowText $hit.item) } }.GetNewClosure())
+    $lv.ContextMenuStrip = $cm
+    $lv.Add_KeyDown({
+        if ($_.Control -and $_.KeyCode -eq [System.Windows.Forms.Keys]::C -and $lv.SelectedItems.Count) {
+            & $copy (& $rowText $lv.SelectedItems[0])
+        }
+    }.GetNewClosure())
 
     $btnScan.Add_Click({
         $base = $tb.Text.Trim()
