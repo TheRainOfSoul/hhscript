@@ -934,6 +934,9 @@ function Show-GuiNetworkScan {
     }.GetNewClosure()
     $rowText = { param($it) ($it.SubItems | ForEach-Object { $_.Text }) -join "`t" }.GetNewClosure()
     $cm = New-Object System.Windows.Forms.ContextMenuStrip
+    $miWeb = $cm.Items.Add('Открыть веб-интерфейс')
+    $miWeb.Add_Click({ if ($hit.item) { Start-Process ('http://' + $hit.item.SubItems[0].Text) } }.GetNewClosure())
+    [void]$cm.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
     $miCell = $cm.Items.Add('Копировать ячейку')
     $miCell.Add_Click({ if ($hit.sub) { & $copy $hit.sub.Text } }.GetNewClosure())
     $miRow = $cm.Items.Add('Копировать строку')
