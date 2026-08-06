@@ -1339,9 +1339,21 @@ if (-not $rs) {
     $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')
     $rs = (Get-Command rustscan -ErrorAction SilentlyContinue).Source
 }
+$nmap = (Get-Command nmap -ErrorAction SilentlyContinue)
+if (-not $nmap) {
+    Write-Host 'Устанавливаю Nmap (winget)...' -ForegroundColor Yellow
+    winget install --id Insecure.Nmap -e --source winget --accept-package-agreements --accept-source-agreements
+    $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')
+    $nmap = (Get-Command nmap -ErrorAction SilentlyContinue)
+}
 if ($rs) {
-    Write-Host "RustScan $env:HH_RSHOST - все порты, подождите..." -ForegroundColor Cyan
-    & $rs -a $env:HH_RSHOST -g --ulimit 5000
+    if ($nmap) {
+        Write-Host "RustScan + Nmap $env:HH_RSHOST - порты и версии сервисов..." -ForegroundColor Cyan
+        & $rs -a $env:HH_RSHOST --ulimit 5000 -- -sV -Pn
+    } else {
+        Write-Host "Nmap недоступен - только порты (rustscan -g)..." -ForegroundColor Yellow
+        & $rs -a $env:HH_RSHOST -g --ulimit 5000
+    }
 } else { Write-Host 'RustScan установить не удалось.' -ForegroundColor Red }
 Write-Host ''; Write-Host 'Готово. Окно можно закрыть.' -ForegroundColor Green
 '@

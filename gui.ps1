@@ -847,8 +847,8 @@ function Show-GuiNetwork {
         }
     }.GetNewClosure()
 
-    # Полный скан портов через RustScan — в отдельной консоли (не морозит окно).
-    & $addBtn 'RustScan порты' 130 { Invoke-RustScan $tbHost.Text }.GetNewClosure()
+    # Полный скан портов через RustScan + Nmap (версии сервисов) — в отдельной консоли.
+    & $addBtn 'RustScan + Nmap' 140 { Invoke-RustScan $tbHost.Text }.GetNewClosure()
 
     & $addBtn 'Сброс сети (нужен админ)' 190 {
         Repair-Network; & $run 'Сброс сети' { 'Выполнено. Подробности — в окне консоли. Требуется перезагрузка.' }
