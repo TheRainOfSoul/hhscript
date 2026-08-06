@@ -1435,6 +1435,7 @@ function Show-Menu {
 if (-not $SkipCliMenu) {
     $GuiStarted = $false
     if (-not $ForceCli -and [Threading.Thread]::CurrentThread.GetApartmentState() -eq 'STA') {
+        Write-Host "`n  HH Toolbox — загрузка интерфейса..." -ForegroundColor Cyan
         try { Invoke-Expression ([string](Invoke-RestMethod -Uri $GuiUrl)).TrimStart([char]0xFEFF) }
         catch {
             Write-Host "`n  GUI не запустился ($($_.Exception.Message))." -ForegroundColor DarkYellow
