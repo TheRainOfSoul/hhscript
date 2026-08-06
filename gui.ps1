@@ -952,27 +952,10 @@ function Show-GuiNetworkScan {
     $f.Dispose()
 }
 
-# Экспорт отчёта о ПК — в GUI через диалог «Сохранить как…».
-function Export-GuiPCReport {
-    $report = (Get-PCReport) -join "`r`n"
-    $dlg = New-Object System.Windows.Forms.SaveFileDialog
-    $dlg.Title            = 'Сохранить отчёт о ПК'
-    $dlg.Filter           = 'Текстовый файл (*.txt)|*.txt|Все файлы (*.*)|*.*'
-    $dlg.FileName         = ("HH-Отчёт-{0}-{1}.txt" -f $env:COMPUTERNAME, (Get-Date -Format 'yyyy-MM-dd'))
-    $dlg.InitialDirectory = [Environment]::GetFolderPath('Desktop')
-    if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-        [IO.File]::WriteAllText($dlg.FileName, $report, (New-Object System.Text.UTF8Encoding $true))
-        $ask = [System.Windows.Forms.MessageBox]::Show(
-            "Отчёт сохранён:`n$($dlg.FileName)`n`nОткрыть его сейчас?", 'HH Toolbox', 'YesNo', 'Information')
-        if ($ask -eq [System.Windows.Forms.DialogResult]::Yes) { Start-Process notepad.exe $dlg.FileName }
-    }
-}
-
 # --- Подменяем консольные версии оконными ($Menu менять не нужно) ---
 function Show-StorageCalc { Show-GuiStorageCalc }
 function Show-NetworkMenu { Show-GuiNetwork }
 function Show-NetworkScan { Show-GuiNetworkScan }
-function Export-PCReport  { Export-GuiPCReport }
 
 # --- Управление окном консоли (скрыть/показать) ---
 if (-not ('HH.Win32' -as [type])) {

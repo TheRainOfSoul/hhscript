@@ -378,84 +378,33 @@ function Show-PCInfo {
     }
 }
 
-# Собрать текстовый отчёт о ПК (массив строк). Используется экспортом в файл —
-# и CLI, и GUI берут отсюда, чтобы содержимое совпадало.
-function Get-PCReport {
-    $os   = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
-    $cs   = Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue
-    $cpu  = Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue | Select-Object -First 1
-    $bb   = Get-CimInstance Win32_BaseBoard -ErrorAction SilentlyContinue
-    $bios = Get-CimInstance Win32_BIOS -ErrorAction SilentlyContinue
-    $ram  = @(Get-CimInstance Win32_PhysicalMemory -ErrorAction SilentlyContinue)
-    $gpu  = (Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue).Name -join ', '
-
-    $L   = New-Object System.Collections.Generic.List[string]
-    $add = { param($k, $v) $L.Add(('  {0,-15}{1}' -f $k, $v)) }   # видят $L динамически (не замыкание)
-    $sec = { param($t) $L.Add(''); $L.Add("== $t ==") }
-
-    $L.Add('======================================================')
-    $L.Add('  ОТЧЁТ О КОМПЬЮТЕРЕ — HH Toolbox')
-    $L.Add(('  Сформирован: {0}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm')))
-    $L.Add('======================================================')
-
-    & $sec 'Система'
-    & $add 'Имя ПК:'        $cs.Name
-    & $add 'Пользователь:'  "$env:USERDOMAIN\$env:USERNAME"
-    & $add 'Производитель:' ("{0} {1}" -f $cs.Manufacturer, $cs.Model)
-    & $add 'Сервис-тег/SN:' $bios.SerialNumber
-    & $add 'Мат. плата:'    ("{0} {1}" -f $bb.Manufacturer, $bb.Product)
-    $biosDate = if ($bios.ReleaseDate) { $bios.ReleaseDate.ToString('yyyy-MM-dd') } else { '' }
-    & $add 'BIOS:'          (("{0} {1}" -f $bios.SMBIOSBIOSVersion, $biosDate).Trim())
-
-    & $sec 'Операционная система'
-    & $add 'ОС:'            ("{0} (сборка {1})" -f $os.Caption, $os.BuildNumber)
-    & $add 'Разрядность:'   $os.OSArchitecture
-    $installDate = if ($os.InstallDate) { $os.InstallDate.ToString('yyyy-MM-dd') } else { 'н/д' }
-    & $add 'Установлена:'   $installDate
-    & $add 'Активация:'     (Get-ActivationStatus)
-    if ($os.LastBootUpTime) { $u = (Get-Date) - $os.LastBootUpTime; & $add 'Аптайм:' ("{0}д {1}ч {2}м" -f $u.Days, $u.Hours, $u.Minutes) }
-
-    & $sec 'Процессор и память'
-    & $add 'Процессор:'     ("{0} ({1} ядер / {2} потоков)" -f $cpu.Name.Trim(), $cpu.NumberOfCores, $cpu.NumberOfLogicalProcessors)
-    & $add 'ОЗУ всего:'     ("{0} ГБ, модулей: {1}" -f [math]::Round($cs.TotalPhysicalMemory / 1GB, 1), $ram.Count)
-    foreach ($m in $ram) { & $add '  модуль:' ("{0} ГБ, {1} МГц, {2}" -f [math]::Round($m.Capacity / 1GB, 1), $m.Speed, ([string]$m.Manufacturer).Trim()) }
-    & $add 'Видеокарта:'    $gpu
-
-    & $sec 'Диски'
-    $phys = @()
-    try { $phys = @(Get-PhysicalDisk -ErrorAction Stop) } catch { $phys = @() }
-    if ($phys) {
-        foreach ($d in $phys) { & $add 'Диск:' ("{0} — {1} ГБ, {2}, {3}" -f $d.FriendlyName, [math]::Round($d.Size / 1GB, 0), $d.MediaType, $d.BusType) }
+# Скачать (если нужно), распаковать и запустить Glow — портейбл-анализатор ПК.
+# Отчёт сохраняется ИЗ интерфейса Glow (HTML / TXT / Markdown); CLI-экспорта у
+# него нет, поэтому автоматически html-файл не создаём — Glow это делает кнопкой.
+function Invoke-Glow {
+    $url  = 'https://disk.yandex.ru/d/yOWdlEZZlBDysw'   # тот же архив, что в списке программ
+    $dir  = Join-Path $env:LOCALAPPDATA 'HHToolbox\Glow'
+    $arch = if ($env:PROCESSOR_ARCHITECTURE -match 'ARM64' -or $env:PROCESSOR_ARCHITEW6432 -match 'ARM64') { 'arm64' } else { 'x64' }
+    $exe  = Get-ChildItem $dir -Recurse -Filter "Glow_$arch.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $exe) {
+        Write-Host "`n   Скачиваю Glow с Яндекс.Диска..." -ForegroundColor Green
+        try {
+            $enc  = [uri]::EscapeDataString($url)
+            $href = (Invoke-RestMethod "https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=$enc").href
+            $zip  = Join-Path $env:TEMP 'glow.zip'
+            $wc = New-Object System.Net.WebClient
+            try { $wc.DownloadFile($href, $zip) } finally { $wc.Dispose() }
+            Expand-Archive -Path $zip -DestinationPath $dir -Force
+            Remove-Item $zip -Force -ErrorAction SilentlyContinue
+            $exe = Get-ChildItem $dir -Recurse -Filter "Glow_$arch.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+        } catch { Write-Host "   Ошибка загрузки Glow: $($_.Exception.Message)" -ForegroundColor Red; return }
+    }
+    if ($exe) {
+        Write-Host "   Запускаю Glow. Внутри — сохранение отчёта в HTML (или TXT/Markdown)." -ForegroundColor Cyan
+        Start-Process $exe.FullName
     } else {
-        Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue | ForEach-Object { & $add 'Диск:' ("{0} — {1} ГБ" -f $_.Model, [math]::Round($_.Size / 1GB, 0)) }
+        Write-Host "   Glow не найден после распаковки." -ForegroundColor Yellow
     }
-    Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' -ErrorAction SilentlyContinue | ForEach-Object {
-        & $add ("Том " + $_.DeviceID) ("{0} ГБ свободно из {1} ГБ" -f [math]::Round($_.FreeSpace / 1GB, 1), [math]::Round($_.Size / 1GB, 1))
-    }
-
-    & $sec 'Сеть'
-    Get-NetIPConfiguration -ErrorAction SilentlyContinue | Where-Object { $_.NetAdapter.Status -eq 'Up' } | ForEach-Object {
-        & $add 'Адаптер:' $_.InterfaceAlias
-        & $add '  MAC:'   $_.NetAdapter.MacAddress
-        & $add '  IPv4:'  (($_.IPv4Address.IPAddress) -join ', ')
-        & $add '  Шлюз:'  (($_.IPv4DefaultGateway.NextHop) -join ', ')
-        & $add '  DNS:'   ((($_.DNSServer | Where-Object { $_.AddressFamily -eq 2 }).ServerAddresses) -join ', ')
-    }
-    $pub = try { (Invoke-RestMethod 'https://api.ipify.org' -TimeoutSec 5) } catch { 'н/д' }
-    & $add 'Внешний IP:' $pub
-
-    $L.Add('')
-    $L.Add('  Отчёт сформирован HH Toolbox (get.hhtdom.ru).')
-    return $L.ToArray()
-}
-
-# CLI-экспорт: сохранить отчёт на Рабочий стол и открыть (в GUI подменяется).
-function Export-PCReport {
-    Write-Host "`n   Сбор данных для отчёта..." -ForegroundColor DarkGray
-    $file = Join-Path ([Environment]::GetFolderPath('Desktop')) ("HH-Отчёт-{0}-{1}.txt" -f $env:COMPUTERNAME, (Get-Date -Format 'yyyy-MM-dd'))
-    (Get-PCReport) -join "`r`n" | Out-File -FilePath $file -Encoding UTF8
-    Write-Host "   Отчёт сохранён: $file" -ForegroundColor Green
-    Start-Process notepad.exe $file
 }
 
 # =====================================================================
@@ -1375,7 +1324,7 @@ function Show-NetworkScan {
 $Menu = @(
     @{ Section = 'Диагностика и сеть' }
     @{ Label = 'Информация о ПК';                                 Action = { Show-PCInfo; Wait-Continue } }
-    @{ Label = 'Экспорт отчёта о ПК в файл';                      Action = { Export-PCReport; Wait-Continue } }
+    @{ Label = 'Анализ ПК — Glow (сохранение в HTML)';            Action = { Invoke-Glow; Wait-Continue } }
     @{ Label = 'Сетевые утилиты (DNS, ping, сброс сети)';         Action = { Show-NetworkMenu } }
     @{ Label = 'Сканер сети (найти камеры/устройства)';           Action = { Show-NetworkScan; Wait-Continue } }
     @{ Label = 'Калькулятор диска и полосы (клон Dahua Basic)';   Action = { Show-StorageCalc; Wait-Continue } }
