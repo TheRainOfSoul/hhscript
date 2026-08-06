@@ -989,7 +989,7 @@ function Show-GuiNetworkScan {
 function Show-GuiUtilityMenu {
     $f = New-Object System.Windows.Forms.Form
     $f.Text            = 'Утилиты: debloat и твики'
-    $f.Size            = New-Object System.Drawing.Size(440, 320)
+    $f.Size            = New-Object System.Drawing.Size(440, 270)
     $f.FormBorderStyle = 'FixedDialog'; $f.MaximizeBox = $false; $f.MinimizeBox = $false
     $f.StartPosition   = 'CenterScreen'
     Initialize-DarkForm $f
@@ -1011,7 +1011,6 @@ function Show-GuiUtilityMenu {
     & $mk 'WinUtil (Chris Titus)'          { Invoke-Remote 'https://christitus.com/win' }.GetNewClosure()
     & $mk 'Win11Debloat (Raphire)'         { Invoke-Remote 'https://debloat.raphi.re/' }.GetNewClosure()
     & $mk 'SophiApp (GUI, галочки)'         { Invoke-SophiApp }.GetNewClosure()
-    & $mk 'Sophia Script (последний релиз)'  { Invoke-SophiaScript }.GetNewClosure()
 
     $bar = New-Object System.Windows.Forms.FlowLayoutPanel
     $bar.Dock = 'Bottom'; $bar.Height = 50; $bar.Padding = New-Object System.Windows.Forms.Padding(16, 8, 16, 8)

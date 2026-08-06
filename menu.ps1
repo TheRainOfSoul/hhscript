@@ -1110,46 +1110,18 @@ function Invoke-SophiApp {
     else { Write-Host "   SophiApp.exe не найден после распаковки." -ForegroundColor Yellow }
 }
 
-# Sophia Script через официальный Wrapper (GUI). Сырой Sophia.ps1 не годится для
-# автозапуска: он требует, чтобы ВОШЕДШИЙ юзер был локальным админом (иначе
-# отказывается), и применяет твики без ревью. Wrapper — это GUI: сам берёт нужную
-# под ОС версию, сам разбирается с правами, а твики выбираются галочками.
-# Качаем последний Wrapper из релиза, распаковываем, запускаем SophiaScriptWrapper.exe.
-function Invoke-SophiaScript {
-    $dir = Join-Path $env:LOCALAPPDATA 'HHToolbox\SophiaWrapper'
-    $exe = Get-ChildItem $dir -Recurse -Filter 'SophiaScriptWrapper.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
-    if (-not $exe) {
-        Write-Host "`n   Скачиваю Sophia Script (Wrapper)..." -ForegroundColor Green
-        try {
-            $rel = Invoke-RestMethod 'https://api.github.com/repos/farag2/Sophia-Script-for-Windows/releases/latest' -Headers @{ 'User-Agent' = 'HHToolbox' }
-            $url = ($rel.assets | Where-Object { $_.name -like '*Wrapper*.zip' } | Select-Object -First 1).browser_download_url
-            if (-not $url) { Write-Host "   Wrapper не найден в релизе." -ForegroundColor Yellow; return }
-            $zip = Join-Path $env:TEMP 'sophiawrapper.zip'
-            $wc = New-Object System.Net.WebClient
-            try { $wc.DownloadFile($url, $zip) } finally { $wc.Dispose() }
-            Expand-Archive -Path $zip -DestinationPath $dir -Force
-            Remove-Item $zip -Force -ErrorAction SilentlyContinue
-            $exe = Get-ChildItem $dir -Recurse -Filter 'SophiaScriptWrapper.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
-        } catch { Write-Host "   Ошибка загрузки: $($_.Exception.Message)" -ForegroundColor Red; return }
-    }
-    if ($exe) { Write-Host "   Запускаю Sophia Script (Wrapper)..." -ForegroundColor Cyan; Start-Process $exe.FullName }
-    else { Write-Host "   SophiaScriptWrapper.exe не найден после распаковки." -ForegroundColor Yellow }
-}
-
 function Show-UtilityMenu {
     do {
         Write-Box 'Утилиты: debloat и твики' 'Magenta'
         Write-Host "   [1] " -NoNewline -ForegroundColor Green; Write-Host "WinUtil (Chris Titus)"
         Write-Host "   [2] " -NoNewline -ForegroundColor Green; Write-Host "Win11Debloat (Raphire)"
         Write-Host "   [3] " -NoNewline -ForegroundColor Green; Write-Host "SophiApp (GUI, галочки)"
-        Write-Host "   [4] " -NoNewline -ForegroundColor Green; Write-Host "Sophia Script (последний релиз)"
         Write-Host "   [0] " -NoNewline -ForegroundColor Red;   Write-Host "Назад"
         Write-Host ""
         switch ((Read-Host "  Выбор").Trim()) {
             '1' { Invoke-Remote 'https://christitus.com/win'; Wait-Continue }
             '2' { Invoke-Remote 'https://debloat.raphi.re/';  Wait-Continue }
             '3' { Invoke-SophiApp; Wait-Continue }
-            '4' { Invoke-SophiaScript; Wait-Continue }
             '0' { return }
             default { Write-Host "`n  Неверный выбор." -ForegroundColor Yellow; Start-Sleep 1 }
         }

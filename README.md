@@ -66,8 +66,8 @@ irm https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/menu.ps1 | iex
   Проверка: на штатном FPS все 11 разрешений дают ровно табличный битрейт
   (1080P/25/H.264 = 4096 Kbps); 1 канал 1080P H.265 круглосуточно за 30 дней —
   703.2 GB; 4 канала того же профиля на диске 4 ТБ — 43 дня.
-- **[7] Утилиты** — WinUtil (Chris Titus), Win11Debloat (Raphire), SophiApp (GUI),
-  Sophia Script (PowerShell): debloat и твики известными инструментами.
+- **[7] Утилиты** — WinUtil (Chris Titus), Win11Debloat (Raphire), SophiApp (GUI):
+  debloat и твики известными инструментами.
 - Перезапуск от имени администратора, выход
 
 ## GUI (WinForms)
