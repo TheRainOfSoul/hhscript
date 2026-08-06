@@ -1090,20 +1090,40 @@ function Show-StorageCalc {
 # =====================================================================
 #  Утилиты: WinUtil / Win11Debloat / Sophia
 # =====================================================================
+# Скачать (если нужно), распаковать и запустить SophiApp — портейбл-GUI debloat.
+# Всегда берём последний релиз (GitHub /latest/download/). Кэш в %LOCALAPPDATA%.
+function Invoke-SophiApp {
+    $dir = Join-Path $env:LOCALAPPDATA 'HHToolbox\SophiApp'
+    $exe = Get-ChildItem $dir -Recurse -Filter 'SophiApp.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $exe) {
+        Write-Host "`n   Скачиваю SophiApp..." -ForegroundColor Green
+        try {
+            $zip = Join-Path $env:TEMP 'sophiapp.zip'
+            $wc = New-Object System.Net.WebClient
+            try { $wc.DownloadFile('https://github.com/Sophia-Community/SophiApp/releases/latest/download/SophiApp.zip', $zip) } finally { $wc.Dispose() }
+            Expand-Archive -Path $zip -DestinationPath $dir -Force
+            Remove-Item $zip -Force -ErrorAction SilentlyContinue
+            $exe = Get-ChildItem $dir -Recurse -Filter 'SophiApp.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+        } catch { Write-Host "   Ошибка загрузки SophiApp: $($_.Exception.Message)" -ForegroundColor Red; return }
+    }
+    if ($exe) { Write-Host "   Запускаю SophiApp..." -ForegroundColor Cyan; Start-Process $exe.FullName }
+    else { Write-Host "   SophiApp.exe не найден после распаковки." -ForegroundColor Yellow }
+}
+
 function Show-UtilityMenu {
     do {
         Write-Box 'Утилиты: debloat и твики' 'Magenta'
         Write-Host "   [1] " -NoNewline -ForegroundColor Green; Write-Host "WinUtil (Chris Titus)"
         Write-Host "   [2] " -NoNewline -ForegroundColor Green; Write-Host "Win11Debloat (Raphire)"
         Write-Host "   [3] " -NoNewline -ForegroundColor Green; Write-Host "SophiApp (GUI, галочки)"
-        Write-Host "   [4] " -NoNewline -ForegroundColor Green; Write-Host "Sophia Script (PowerShell)"
+        Write-Host "   [4] " -NoNewline -ForegroundColor Green; Write-Host "Sophia Script (выбор версии)"
         Write-Host "   [0] " -NoNewline -ForegroundColor Red;   Write-Host "Назад"
         Write-Host ""
         switch ((Read-Host "  Выбор").Trim()) {
             '1' { Invoke-Remote 'https://christitus.com/win'; Wait-Continue }
             '2' { Invoke-Remote 'https://debloat.raphi.re/';  Wait-Continue }
-            '3' { $null = Install-Item @{ Name = 'SophiApp';      Winget = 'TeamSophia.SophiApp';    Url = 'https://github.com/Sophia-Community/SophiApp/releases' }; Wait-Continue }
-            '4' { $null = Install-Item @{ Name = 'Sophia Script'; Winget = 'TeamSophia.SophiaScript'; Url = 'https://github.com/farag2/Sophia-Script-for-Windows/releases' }; Wait-Continue }
+            '3' { Invoke-SophiApp; Wait-Continue }
+            '4' { Start-Process 'https://github.com/farag2/Sophia-Script-for-Windows/releases'; Wait-Continue }
             '0' { return }
             default { Write-Host "`n  Неверный выбор." -ForegroundColor Yellow; Start-Sleep 1 }
         }

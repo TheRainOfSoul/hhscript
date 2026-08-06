@@ -982,10 +982,58 @@ function Show-GuiNetworkScan {
     $f.Dispose()
 }
 
+# =====================================================================
+#  Утилиты debloat/твики — модальное окно выбора. Клик запускает утилиту
+#  (в отдельной консоли / приложением / браузером), окно просто закрываешь.
+# =====================================================================
+function Show-GuiUtilityMenu {
+    $f = New-Object System.Windows.Forms.Form
+    $f.Text            = 'Утилиты: debloat и твики'
+    $f.Size            = New-Object System.Drawing.Size(440, 320)
+    $f.FormBorderStyle = 'FixedDialog'; $f.MaximizeBox = $false; $f.MinimizeBox = $false
+    $f.StartPosition   = 'CenterScreen'
+    Initialize-DarkForm $f
+
+    $flow = New-Object System.Windows.Forms.FlowLayoutPanel
+    $flow.Dock = 'Fill'; $flow.FlowDirection = 'TopDown'; $flow.WrapContents = $false
+    $flow.Padding = New-Object System.Windows.Forms.Padding(16, 14, 16, 14)
+    $flow.BackColor = $script:Theme.Bg
+    $mk = {
+        param($text, $action)
+        $b = New-Object System.Windows.Forms.Button
+        $b.Text = $text; $b.Width = 384; $b.Height = 42; $b.TextAlign = 'MiddleLeft'
+        $b.Padding = New-Object System.Windows.Forms.Padding(12, 0, 0, 0)
+        $b.Margin = New-Object System.Windows.Forms.Padding(2, 3, 2, 3)
+        Set-FlatButton $b
+        $b.Add_Click($action)
+        [void]$flow.Controls.Add($b)
+    }.GetNewClosure()
+    & $mk 'WinUtil (Chris Titus)'          { Invoke-Remote 'https://christitus.com/win' }.GetNewClosure()
+    & $mk 'Win11Debloat (Raphire)'         { Invoke-Remote 'https://debloat.raphi.re/' }.GetNewClosure()
+    & $mk 'SophiApp (GUI, галочки)'         { Invoke-SophiApp }.GetNewClosure()
+    & $mk 'Sophia Script (выбор версии)'    { Start-Process 'https://github.com/farag2/Sophia-Script-for-Windows/releases' }.GetNewClosure()
+
+    $bar = New-Object System.Windows.Forms.FlowLayoutPanel
+    $bar.Dock = 'Bottom'; $bar.Height = 50; $bar.Padding = New-Object System.Windows.Forms.Padding(16, 8, 16, 8)
+    $bar.BackColor = $script:Theme.Bg
+    $btnClose = New-Object System.Windows.Forms.Button
+    $btnClose.Text = 'Закрыть'; $btnClose.Width = 120; $btnClose.Height = 32
+    Set-FlatButton $btnClose
+    $btnClose.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+    $bar.Controls.Add($btnClose)
+
+    $f.Controls.Add($flow)
+    $f.Controls.Add($bar)
+    $f.CancelButton = $btnClose
+    [void]$f.ShowDialog()
+    $f.Dispose()
+}
+
 # --- Подменяем консольные версии оконными ($Menu менять не нужно) ---
 function Show-StorageCalc { Show-GuiStorageCalc }
 function Show-NetworkMenu { Show-GuiNetwork }
 function Show-NetworkScan { Show-GuiNetworkScan }
+function Show-UtilityMenu { Show-GuiUtilityMenu }
 
 # --- Управление окном консоли (скрыть/показать) ---
 if (-not ('HH.Win32' -as [type])) {
