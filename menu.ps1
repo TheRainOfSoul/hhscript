@@ -1110,20 +1110,54 @@ function Invoke-SophiApp {
     else { Write-Host "   SophiApp.exe не найден после распаковки." -ForegroundColor Yellow }
 }
 
+# Скачать последний релиз Sophia Script под ТЕКУЩУЮ ОС (Win10/Win11, обычный
+# вариант для Windows PowerShell 5.1), распаковать и запустить Sophia.ps1 в
+# отдельной видимой консоли от админа. Без выбора версии — всегда свежий.
+function Invoke-SophiaScript {
+    try {
+        $rel = Invoke-RestMethod 'https://api.github.com/repos/farag2/Sophia-Script-for-Windows/releases/latest' -Headers @{ 'User-Agent' = 'HHToolbox' }
+    } catch { Write-Host "   Не удалось получить релиз Sophia Script: $($_.Exception.Message)" -ForegroundColor Red; return }
+
+    $osTag = if ([Environment]::OSVersion.Version.Build -ge 22000) { 'Windows.11' } else { 'Windows.10' }
+    $asset = $rel.assets | Where-Object {
+        $_.name -like "*$osTag*" -and $_.name -like '*.zip' -and
+        $_.name -notlike '*LTSC*' -and $_.name -notlike '*Arm*' -and
+        $_.name -notlike '*PowerShell.7*' -and $_.name -notlike '*Wrapper*'
+    } | Select-Object -First 1
+    if (-not $asset) { Write-Host "   Не нашёл сборку Sophia Script под $osTag." -ForegroundColor Yellow; return }
+
+    $dir = Join-Path $env:LOCALAPPDATA 'HHToolbox\SophiaScript'
+    if (Test-Path $dir) { Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue }   # всегда свежий
+    Write-Host "`n   Скачиваю $($asset.name)..." -ForegroundColor Green
+    try {
+        $zip = Join-Path $env:TEMP 'sophiascript.zip'
+        $wc = New-Object System.Net.WebClient
+        try { $wc.DownloadFile($asset.browser_download_url, $zip) } finally { $wc.Dispose() }
+        Expand-Archive -Path $zip -DestinationPath $dir -Force
+        Remove-Item $zip -Force -ErrorAction SilentlyContinue
+    } catch { Write-Host "   Ошибка загрузки: $($_.Exception.Message)" -ForegroundColor Red; return }
+
+    $ps1 = Get-ChildItem $dir -Recurse -Filter 'Sophia.ps1' -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $ps1) { Write-Host "   Sophia.ps1 не найден после распаковки." -ForegroundColor Yellow; return }
+    Write-Host "   Запускаю Sophia Script в отдельной консоли (от админа)..." -ForegroundColor Cyan
+    Start-Process powershell -Verb RunAs -WorkingDirectory $ps1.DirectoryName -ArgumentList @(
+        '-NoExit', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $ps1.FullName)
+}
+
 function Show-UtilityMenu {
     do {
         Write-Box 'Утилиты: debloat и твики' 'Magenta'
         Write-Host "   [1] " -NoNewline -ForegroundColor Green; Write-Host "WinUtil (Chris Titus)"
         Write-Host "   [2] " -NoNewline -ForegroundColor Green; Write-Host "Win11Debloat (Raphire)"
         Write-Host "   [3] " -NoNewline -ForegroundColor Green; Write-Host "SophiApp (GUI, галочки)"
-        Write-Host "   [4] " -NoNewline -ForegroundColor Green; Write-Host "Sophia Script (выбор версии)"
+        Write-Host "   [4] " -NoNewline -ForegroundColor Green; Write-Host "Sophia Script (последний релиз)"
         Write-Host "   [0] " -NoNewline -ForegroundColor Red;   Write-Host "Назад"
         Write-Host ""
         switch ((Read-Host "  Выбор").Trim()) {
             '1' { Invoke-Remote 'https://christitus.com/win'; Wait-Continue }
             '2' { Invoke-Remote 'https://debloat.raphi.re/';  Wait-Continue }
             '3' { Invoke-SophiApp; Wait-Continue }
-            '4' { Start-Process 'https://github.com/farag2/Sophia-Script-for-Windows/releases'; Wait-Continue }
+            '4' { Invoke-SophiaScript; Wait-Continue }
             '0' { return }
             default { Write-Host "`n  Неверный выбор." -ForegroundColor Yellow; Start-Sleep 1 }
         }
