@@ -51,7 +51,7 @@ $Programs = @(
     @{ Name = 'TestDisk + PhotoRec (восстановление)'; Winget = 'CGSecurity.TestDisk'; Url = 'https://www.cgsecurity.org/wiki/TestDisk_Download' }
     @{ Name = 'WizTree (диск)';       Winget = 'AntibodySoftware.WizTree';        Url = 'https://diskanalyzer.com/download' }
     @{ Name = 'Everything (поиск)';   Winget = 'voidtools.Everything';            Url = 'https://www.voidtools.com/downloads/' }
-    @{ Name = 'Glow (анализ системы)'; Winget = '';                               Url = 'https://github.com/turkaysoft/glow/releases' }
+    @{ Name = 'Glow (анализ системы)'; Yadisk = 'https://disk.yandex.ru/d/yOWdlEZZlBDysw' }
     # --- Стресс / бенчмарк ---
     @{ Group = 'Стресс / бенчмарк'; Name = 'OCCT (стресс-тест)';   Winget = 'OCBase.OCCT.Personal';            Url = 'https://www.ocbase.com/' }
     @{ Name = 'FurMark (стресс GPU)'; Winget = 'Geeks3D.FurMark.2';               Url = 'https://geeks3d.com/furmark/' }
@@ -1381,6 +1381,16 @@ $Menu = @(
     @{ Label = 'Калькулятор диска и полосы (клон Dahua Basic)';   Action = { Show-StorageCalc; Wait-Continue } }
     @{ Label = 'Стресс-тест ПК (CPU-прожиг + OCCT/FurMark/диск)'; Action = { Invoke-Remote 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/scripts/stresstest.ps1'; Wait-Continue } }
     @{ Section = 'Программы' }
+    @{ Label = 'Установить winget (App Installer)';              Action = {
+            if (Get-Command winget -ErrorAction SilentlyContinue) {
+                Write-Host "`n   winget уже установлен: $(winget --version)" -ForegroundColor Green
+            } else {
+                Write-Host "`n   Устанавливаю winget (App Installer)..." -ForegroundColor Cyan
+                if (Install-Winget) { $script:HasWinget = $true; Write-Host "   Готово: $(winget --version)" -ForegroundColor Green }
+                else { Write-Host "   Не удалось установить winget — подробности выше." -ForegroundColor Yellow }
+            }
+            Wait-Continue
+        }; Admin = $true }
     @{ Label = 'Установить программы (галочками)';                Action = { Show-ProgramMenu } }
     @{ Label = 'Обновить весь софт (winget upgrade)';            Action = { Invoke-WingetUpgrade; Wait-Continue } }
     @{ Label = 'Утилиты: WinUtil / Win11Debloat / Sophia';        Action = { Show-UtilityMenu } }
