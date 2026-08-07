@@ -9,7 +9,7 @@ Win11Debloat, ставить программы и гонять свои скр�
 Через домен (после настройки Cloudflare):
 
 ```powershell
-irm get.hhtdom.ru | iex
+irm win.hhtdom.ru | iex
 ```
 
 Напрямую через GitHub (работает сразу):
@@ -17,6 +17,31 @@ irm get.hhtdom.ru | iex
 ```powershell
 irm https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/menu.ps1 | iex
 ```
+
+## Linux (Debian/Ubuntu)
+
+Для headless-серверов (только командная строка, без GUI) — отдельный
+CLI-помощник `linux.sh`:
+
+```bash
+curl lin.hhtdom.ru | bash
+```
+
+Напрямую через GitHub:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/linux.sh | bash
+```
+
+Интерфейс — [gum](https://github.com/charmbracelet/gum) (красивое TUI; бинарник
+подтягивается автоматически, если его нет), с откатом на чистый bash. Разделы:
+**информация о системе и сеть**, **установка программ галочками** (htop, btop,
+tmux, mc, ncdu, nmap, docker, nginx, fail2ban, ufw и др. через `apt`), **твики и
+настройка сервера** (обновления, UFW, fail2ban, автообновления безопасности,
+часовой пояс, swap, hostname, TCP BBR, хардненинг SSH), **справочник команд** с
+описанием и запуском (порты, топ процессов, диск, сервисы, журнал, сеть).
+Весь ввод читается из `/dev/tty`, поэтому `curl … | bash` не мешает
+интерактиву. Принудительный режим: `HH_UI=plain` или `HH_UI=gum`.
 
 ## Состав меню
 

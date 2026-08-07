@@ -1,4 +1,4 @@
-name: Lint PowerShell
+name: Lint scripts
 
 # Все ПК тянут скрипт вживую с main — этот чек ловит битое ДО того, как оно
 # попадёт всем. Красный крест = не мержим.
@@ -47,3 +47,25 @@ jobs:
           if ($warns)  { Write-Host "Warnings ($($warns.Count)):";  $warns  | Format-Table RuleName, ScriptName, Line, Message -AutoSize -Wrap }
           if ($errors) { Write-Host "Errors ($($errors.Count)):";   $errors | Format-Table RuleName, ScriptName, Line, Message -AutoSize -Wrap; exit 1 }
           Write-Host "No PSScriptAnalyzer errors."
+
+  # Linux-скрипт (linux.sh) тянется вживую через `curl lin.hhtdom.ru | bash` —
+  # CRLF или синтаксическая ошибка положат всех, кто его запускает.
+  bash:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax (bash -n) + запрет CRLF
+        run: |
+          bad=0
+          for f in $(git ls-files '*.sh'); do
+            if grep -qP '\r$' "$f"; then echo "::error::$f содержит CRLF — bash сломается"; bad=1; fi
+            if bash -n "$f"; then echo "OK: $f"; else echo "::error::Синтаксис в $f"; bad=1; fi
+          done
+          [ "$bad" = 0 ] || exit 1
+
+      - name: shellcheck
+        run: |
+          for f in $(git ls-files '*.sh'); do
+            shellcheck --exclude=SC1091 "$f" || exit 1
+          done

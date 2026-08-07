@@ -1,10 +1,10 @@
 # =====================================================================
 #  HH Script — универсальный лаунчер
-#  Запуск:  irm get.hhtdom.ru | iex
+#  Запуск:  irm win.hhtdom.ru | iex
 # =====================================================================
 
 # --- Ссылка, по которой запускается это меню (для перезапуска от админа).
-$LauncherUrl = 'https://get.hhtdom.ru'
+$LauncherUrl = 'https://win.hhtdom.ru'
 $GuiUrl      = 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/gui.ps1'
 
 # --- Совместимость со старыми системами + кириллица ------------------
