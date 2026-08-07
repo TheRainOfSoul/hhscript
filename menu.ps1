@@ -70,6 +70,9 @@ $Programs = @(
     @{ Name = 'SADP (Hikvision)';     Yadisk = 'https://disk.yandex.ru/d/E8HX0NivegXgRQ' }
     @{ Name = 'HiTools Delivery (Hikvision)'; Yadisk = 'https://disk.yandex.ru/d/3LJjK0CS-HZqwQ' }
     @{ Name = 'iVMS-4200 (Hikvision)'; Yadisk = 'https://disk.yandex.ru/d/U8nd7S3DwH8mtw' }
+    # --- Раскладки клавиатуры (MSKLC, фонетические, из репозитория) ---
+    @{ Group = 'Раскладки клавиатуры'; Name = 'Русская фонетическая раскладка';  Layout = 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/layouts/RussianPhonetic.zip' }
+    @{ Name = 'Армянская фонетическая раскладка'; Layout = 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/layouts/ArmenianPhonetic.zip' }
 )
 
 # =====================================================================
@@ -219,6 +222,7 @@ function Install-Item {
         Write-Host "`n   '$($p.Name)' — загрузка с Яндекс.Диска..." -ForegroundColor Green
         return (Get-YadiskFile -PublicUrl $p.Yadisk -Name $p.File)
     }
+    if ($p.Layout) { return (Install-KbLayout -ZipUrl $p.Layout -Name $p.Name) }
     $ids = if ($p.WingetList) { $p.WingetList } elseif ($p.Winget) { @($p.Winget) } else { @() }
     if ($ids.Count -and (Confirm-Winget)) {
         $ok = $true
@@ -237,6 +241,33 @@ function Install-Item {
     }
     Write-Host "`n   Нет данных для установки '$($p.Name)'." -ForegroundColor Red
     return $false
+}
+
+# Установить MSKLC-раскладку клавиатуры: скачать zip из репозитория, распаковать,
+# запустить setup.exe (ставит тихо, нужен админ). Возвращает $true/$false.
+function Install-KbLayout {
+    param([string]$ZipUrl, [string]$Name)
+    Write-Host "`n   Установка раскладки '$Name'..." -ForegroundColor Green
+    $tmp = Join-Path $env:TEMP 'hh-kb'
+    try {
+        if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue }
+        New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+        $zip = Join-Path $env:TEMP 'hh-kb.zip'
+        $wc = New-Object System.Net.WebClient
+        try { $wc.DownloadFile($ZipUrl, $zip) } finally { $wc.Dispose() }
+        Expand-Archive -Path $zip -DestinationPath $tmp -Force
+        Remove-Item $zip -Force -ErrorAction SilentlyContinue
+    } catch { Write-Host "   Ошибка загрузки раскладки: $($_.Exception.Message)" -ForegroundColor Red; return $false }
+    $setup = Get-ChildItem $tmp -Recurse -Filter 'setup.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $setup) { Write-Host "   setup.exe не найден в архиве." -ForegroundColor Yellow; return $false }
+    try {
+        $proc = Start-Process $setup.FullName -Verb RunAs -Wait -PassThru
+        if ($proc.ExitCode -eq 0) {
+            Write-Host "   Раскладка установлена. Добавь её в Параметры → Время и язык, если не появилась." -ForegroundColor Green
+            return $true
+        }
+        Write-Host "   setup.exe завершился с кодом $($proc.ExitCode)." -ForegroundColor Yellow; return $false
+    } catch { Write-Host "   Не удалось запустить setup.exe: $($_.Exception.Message)" -ForegroundColor Red; return $false }
 }
 
 # Скачать и запустить файл по публичной ссылке Яндекс.Диска. Свежая прямая
@@ -653,6 +684,7 @@ function Show-ProgramMenu {
     $labels = @($Programs | ForEach-Object {
         if ($HasWinget -and $_.Winget) { $_.Name }
         elseif ($_.Yadisk) { $_.Name + '  (Я.Диск)' }
+        elseif ($_.Layout) { $_.Name + '  (раскладка)' }
         else { $_.Name + '  (сайт)' }
     })
     # Заголовки групп: у стартовой записи каждой группы задано поле Group
@@ -826,8 +858,8 @@ function Invoke-NewPC {
     if ((Read-Host "   Начать настройку нового ПК? (y/n)").Trim().ToLower() -ne 'y') { return }
 
     Add-RestorePoint 'Перед настройкой Новый ПК (HH Toolbox)'
-    # 1/4 — программы
-    Write-Host "`n  [1/4] Установка программ (Chrome, 7-Zip, AnyDesk)..." -ForegroundColor Cyan
+    # 1/6 — программы
+    Write-Host "`n  [1/6] Установка программ (Chrome, 7-Zip, AnyDesk)..." -ForegroundColor Cyan
     if (Confirm-Winget) {
         foreach ($id in 'Google.Chrome', '7zip.7zip', 'AnyDesk.AnyDesk') {
             Write-Host "   winget: $id" -ForegroundColor DarkGray
@@ -835,14 +867,24 @@ function Invoke-NewPC {
         }
     } else { Write-Host "   winget не найден — пропускаю установку программ." -ForegroundColor Yellow }
 
-    # 2/4 — иконка «Этот компьютер»
-    Write-Host "`n  [2/4] Иконка «Этот компьютер» на рабочий стол..." -ForegroundColor Cyan
+    # 2/6 — часовой пояс (Ереван)
+    Write-Host "`n  [2/6] Часовой пояс — Ереван (UTC+4)..." -ForegroundColor Cyan
+    try { Set-TimeZone -Id 'Caucasus Standard Time' -ErrorAction Stop; Write-Host "   Установлен: Caucasus Standard Time (Ереван)." -ForegroundColor Green }
+    catch { Write-Host "   Не удалось (нужен админ): $($_.Exception.Message)" -ForegroundColor Yellow }
+
+    # 3/6 — раскладки клавиатуры (русская + армянская фонетические)
+    Write-Host "`n  [3/6] Раскладки клавиатуры (русская + армянская фонетические)..." -ForegroundColor Cyan
+    $null = Install-KbLayout 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/layouts/RussianPhonetic.zip' 'Русская фонетическая'
+    $null = Install-KbLayout 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/layouts/ArmenianPhonetic.zip' 'Армянская фонетическая'
+
+    # 4/6 — иконка «Этот компьютер»
+    Write-Host "`n  [4/6] Иконка «Этот компьютер» на рабочий стол..." -ForegroundColor Cyan
     $ns = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\NewStartPanel'
     New-Item -Path $ns -Force | Out-Null
     Set-ItemProperty $ns -Name '{20D04FE0-3AEA-1069-A2D8-08002B30309D}' -Value 0 -Type DWord -ErrorAction SilentlyContinue
 
-    # 3/4 — отключить виджеты
-    Write-Host "`n  [3/4] Отключение виджетов..." -ForegroundColor Cyan
+    # 5/6 — отключить виджеты
+    Write-Host "`n  [5/6] Отключение виджетов..." -ForegroundColor Cyan
     Set-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name TaskbarDa -Value 0 -ErrorAction SilentlyContinue
     if (Test-Admin) {
         $dsh = 'HKLM:\SOFTWARE\Policies\Microsoft\Dsh'
@@ -850,8 +892,8 @@ function Invoke-NewPC {
         Set-ItemProperty $dsh -Name AllowNewsAndInterests -Value 0 -Type DWord -ErrorAction SilentlyContinue
     }
 
-    # 4/4 — драйверы
-    Write-Host "`n  [4/4] Драйверы (официальный CLI вендора, без Windows Update)..." -ForegroundColor Cyan
+    # 6/6 — драйверы
+    Write-Host "`n  [6/6] Драйверы (официальный CLI вендора, без Windows Update)..." -ForegroundColor Cyan
     Invoke-DriverUpdate
 
     Write-Host "`n  Перезапуск проводника для применения иконок и виджетов..." -ForegroundColor DarkGray
