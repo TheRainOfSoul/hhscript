@@ -1160,6 +1160,70 @@ function Repair-System {
     Write-Host "`n   Готово. Если остались ошибки — перезагрузи ПК и запусти повторно." -ForegroundColor Green
 }
 
+# =====================================================================
+#  Проверка на вирусы / трояны / майнеры
+# =====================================================================
+# Встроенный Defender: обновить сигнатуры и просканировать в отдельной консоли
+# от админа (виден прогресс). ScanType 1 = быстрый, 2 = полный.
+function Invoke-DefenderScan {
+    param([ValidateSet('Quick', 'Full')][string]$Type = 'Quick')
+    $mp = Join-Path $env:ProgramFiles 'Windows Defender\MpCmdRun.exe'
+    if (-not (Test-Path $mp)) { Write-Host "   MpCmdRun.exe не найден (Defender отключён?)." -ForegroundColor Yellow; return }
+    $env:HH_MP = $mp
+    $env:HH_ST = if ($Type -eq 'Full') { '2' } else { '1' }
+    Write-Host "`n   Запускаю $Type-скан Defender в отдельной консоли (от админа)..." -ForegroundColor Cyan
+    $inner = @'
+$ErrorActionPreference = 'Continue'
+Write-Host 'Windows Defender: обновляю сигнатуры...' -ForegroundColor Cyan
+& $env:HH_MP -SignatureUpdate
+Write-Host "Сканирование (ScanType $env:HH_ST)..." -ForegroundColor Cyan
+& $env:HH_MP -Scan -ScanType $env:HH_ST
+Write-Host ''; Write-Host 'Готово. Окно можно закрыть.' -ForegroundColor Green
+'@
+    $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($inner))
+    Start-Process powershell -Verb RunAs -ArgumentList @('-NoExit', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $enc)
+}
+
+# Скачать СВЕЖИЙ портейбл-сканер и запустить (сам запросит права админа).
+# Всегда качаем заново — у сканеров важны свежие сигнатуры.
+function Invoke-SecurityTool {
+    param([string]$Url, [string]$Name)
+    $dir = Join-Path $env:LOCALAPPDATA 'HHToolbox\Security'
+    $exe = Join-Path $dir $Name
+    Write-Host "`n   Скачиваю $Name (свежая версия, может быть большим)..." -ForegroundColor Green
+    try {
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+        $wc = New-Object System.Net.WebClient
+        try { $wc.DownloadFile($Url, $exe) } finally { $wc.Dispose() }
+    } catch { Write-Host "   Ошибка загрузки: $($_.Exception.Message)" -ForegroundColor Red; return }
+    Write-Host "   Запускаю $Name (запросит права администратора)..." -ForegroundColor Cyan
+    Start-Process $exe
+}
+
+function Show-SecurityScan {
+    do {
+        Write-Box 'Проверка на вирусы / майнеры' 'Yellow'
+        Write-Host "   [1] " -NoNewline -ForegroundColor Green; Write-Host "Defender — быстрый скан (встроен)"
+        Write-Host "   [2] " -NoNewline -ForegroundColor Green; Write-Host "Defender — полный скан (встроен)"
+        Write-Host "   [3] " -NoNewline -ForegroundColor Green; Write-Host "KVRT — Kaspersky Virus Removal Tool"
+        Write-Host "   [4] " -NoNewline -ForegroundColor Green; Write-Host "Emsisoft Emergency Kit"
+        Write-Host "   [5] " -NoNewline -ForegroundColor Green; Write-Host "AdwCleaner — реклама/PUP/тулбары"
+        Write-Host "   [6] " -NoNewline -ForegroundColor Green; Write-Host "Dr.Web CureIt! (сайт)"
+        Write-Host "   [0] " -NoNewline -ForegroundColor Red;   Write-Host "Назад"
+        Write-Host ""
+        switch ((Read-Host "  Выбор").Trim()) {
+            '1' { Invoke-DefenderScan -Type Quick; Wait-Continue }
+            '2' { Invoke-DefenderScan -Type Full;  Wait-Continue }
+            '3' { Invoke-SecurityTool 'https://devbuilds.s.kaspersky-labs.com/devbuilds/KVRT/latest/full/KVRT.exe' 'KVRT.exe'; Wait-Continue }
+            '4' { Invoke-SecurityTool 'https://dl.emsisoft.com/EmsisoftEmergencyKit.exe' 'EmsisoftEmergencyKit.exe'; Wait-Continue }
+            '5' { Invoke-SecurityTool 'https://downloads.malwarebytes.com/file/adwcleaner' 'AdwCleaner.exe'; Wait-Continue }
+            '6' { Start-Process 'https://free.drweb.com/cureit/'; Wait-Continue }
+            '0' { return }
+            default { Write-Host "`n  Неверный выбор." -ForegroundColor Yellow; Start-Sleep 1 }
+        }
+    } while ($true)
+}
+
 function Invoke-WingetUpgrade {
     if (Confirm-Winget) {
         Write-Host "`n   Обновление всего установленного софта..." -ForegroundColor Green
@@ -1419,6 +1483,7 @@ $Menu = @(
     @{ Label = 'Базовые твики (расширения, тёмная тема, меню)';  Action = { Invoke-LightTweak; Wait-Continue } }
     @{ Label = 'Проверка/восстановление системы (DISM + SFC)';   Action = { Repair-System; Wait-Continue }; Admin = $true }
     @{ Label = 'Обновление драйверов (Dell/HP/Lenovo/Intel)';    Action = { Invoke-DriverUpdate; Wait-Continue }; Admin = $true }
+    @{ Label = 'Проверка на вирусы / майнеры';                  Action = { Show-SecurityScan; Wait-Continue } }
     @{ Section = 'Установка и активация' }
     @{ Label = 'MAS — активация Windows / Office';               Action = { Invoke-Remote 'https://get.activated.win'; Wait-Continue } }
     @{ Label = 'Новый ПК — первичная настройка';                Action = { Invoke-NewPC; Wait-Continue }; Admin = $true; Color = 'Magenta' }

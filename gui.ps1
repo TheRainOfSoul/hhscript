@@ -1028,11 +1028,62 @@ function Show-GuiUtilityMenu {
     $f.Dispose()
 }
 
+# =====================================================================
+#  Проверка на вирусы/майнеры — модальное окно. Клик запускает сканер
+#  (Defender — в консоли; портейбл-сканеры качаются свежими и стартуют),
+#  окно просто закрываешь.
+# =====================================================================
+function Show-GuiSecurityScan {
+    $f = New-Object System.Windows.Forms.Form
+    $f.Text            = 'Проверка на вирусы / майнеры'
+    $f.Size            = New-Object System.Drawing.Size(460, 420)
+    $f.FormBorderStyle = 'FixedDialog'; $f.MaximizeBox = $false; $f.MinimizeBox = $false
+    $f.StartPosition   = 'CenterScreen'
+    Initialize-DarkForm $f
+
+    $flow = New-Object System.Windows.Forms.FlowLayoutPanel
+    $flow.Dock = 'Fill'; $flow.FlowDirection = 'TopDown'; $flow.WrapContents = $false
+    $flow.Padding = New-Object System.Windows.Forms.Padding(16, 14, 16, 14)
+    $flow.BackColor = $script:Theme.Bg
+    $mk = {
+        param($text, $action)
+        $b = New-Object System.Windows.Forms.Button
+        $b.Text = $text; $b.Width = 404; $b.Height = 40; $b.TextAlign = 'MiddleLeft'
+        $b.Padding = New-Object System.Windows.Forms.Padding(12, 0, 0, 0)
+        $b.Margin = New-Object System.Windows.Forms.Padding(2, 3, 2, 3)
+        Set-FlatButton $b
+        $b.Add_Click($action)
+        [void]$flow.Controls.Add($b)
+    }.GetNewClosure()
+    & $mk 'Defender — быстрый скан (встроен)' { Invoke-DefenderScan -Type Quick }.GetNewClosure()
+    & $mk 'Defender — полный скан (встроен)'  { Invoke-DefenderScan -Type Full }.GetNewClosure()
+    & $mk 'KVRT — Kaspersky Virus Removal Tool' { Invoke-SecurityTool 'https://devbuilds.s.kaspersky-labs.com/devbuilds/KVRT/latest/full/KVRT.exe' 'KVRT.exe' }.GetNewClosure()
+    & $mk 'Emsisoft Emergency Kit'            { Invoke-SecurityTool 'https://dl.emsisoft.com/EmsisoftEmergencyKit.exe' 'EmsisoftEmergencyKit.exe' }.GetNewClosure()
+    & $mk 'AdwCleaner — реклама/PUP/тулбары'   { Invoke-SecurityTool 'https://downloads.malwarebytes.com/file/adwcleaner' 'AdwCleaner.exe' }.GetNewClosure()
+    & $mk 'Dr.Web CureIt! (сайт)'             { Start-Process 'https://free.drweb.com/cureit/' }.GetNewClosure()
+
+    $bar = New-Object System.Windows.Forms.FlowLayoutPanel
+    $bar.Dock = 'Bottom'; $bar.Height = 50; $bar.Padding = New-Object System.Windows.Forms.Padding(16, 8, 16, 8)
+    $bar.BackColor = $script:Theme.Bg
+    $btnClose = New-Object System.Windows.Forms.Button
+    $btnClose.Text = 'Закрыть'; $btnClose.Width = 120; $btnClose.Height = 32
+    Set-FlatButton $btnClose
+    $btnClose.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+    $bar.Controls.Add($btnClose)
+
+    $f.Controls.Add($flow)
+    $f.Controls.Add($bar)
+    $f.CancelButton = $btnClose
+    [void]$f.ShowDialog()
+    $f.Dispose()
+}
+
 # --- Подменяем консольные версии оконными ($Menu менять не нужно) ---
 function Show-StorageCalc { Show-GuiStorageCalc }
 function Show-NetworkMenu { Show-GuiNetwork }
 function Show-NetworkScan { Show-GuiNetworkScan }
 function Show-UtilityMenu { Show-GuiUtilityMenu }
+function Show-SecurityScan { Show-GuiSecurityScan }
 
 # --- Управление окном консоли (скрыть/показать) ---
 if (-not ('HH.Win32' -as [type])) {
