@@ -1169,17 +1169,20 @@ function Invoke-DefenderScan {
     param([ValidateSet('Quick', 'Full')][string]$Type = 'Quick')
     $mp = Join-Path $env:ProgramFiles 'Windows Defender\MpCmdRun.exe'
     if (-not (Test-Path $mp)) { Write-Host "   MpCmdRun.exe не найден (Defender отключён?)." -ForegroundColor Yellow; return }
-    $env:HH_MP = $mp
-    $env:HH_ST = if ($Type -eq 'Full') { '2' } else { '1' }
+    $st = if ($Type -eq 'Full') { '2' } else { '1' }
     Write-Host "`n   Запускаю $Type-скан Defender в отдельной консоли (от админа)..." -ForegroundColor Cyan
-    $inner = @'
-$ErrorActionPreference = 'Continue'
+    # Путь и ScanType встраиваем прямо в команду: elevated-консоль (RunAs) НЕ
+    # наследует окружение родителя, поэтому env-переменные там пустые. Путь
+    # системный, ScanType — цифра, инъекции нет.
+    $inner = @"
+`$ErrorActionPreference = 'Continue'
+`$mp = '$mp'
 Write-Host 'Windows Defender: обновляю сигнатуры...' -ForegroundColor Cyan
-& $env:HH_MP -SignatureUpdate
-Write-Host "Сканирование (ScanType $env:HH_ST)..." -ForegroundColor Cyan
-& $env:HH_MP -Scan -ScanType $env:HH_ST
+& `$mp -SignatureUpdate
+Write-Host 'Сканирование (ScanType $st)...' -ForegroundColor Cyan
+& `$mp -Scan -ScanType $st
 Write-Host ''; Write-Host 'Готово. Окно можно закрыть.' -ForegroundColor Green
-'@
+"@
     $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($inner))
     Start-Process powershell -Verb RunAs -ArgumentList @('-NoExit', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $enc)
 }
