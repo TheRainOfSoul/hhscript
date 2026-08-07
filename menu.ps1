@@ -646,6 +646,23 @@ function Invoke-LightTweak {
                     Set-ItemProperty $cdm -Name $n -Value 0 -ErrorAction SilentlyContinue
                 }
             } }
+        @{ Label = 'NumLock включён при загрузке';            Do = {
+                # 0x80000002 форсирует NumLock даже при «Быстром запуске».
+                Set-ItemProperty 'HKCU:\Control Panel\Keyboard' -Name InitialKeyboardIndicators -Value '2147483650' -ErrorAction SilentlyContinue
+                # для экрана входа / новых пользователей (нужен админ):
+                Set-ItemProperty 'Registry::HKEY_USERS\.DEFAULT\Control Panel\Keyboard' -Name InitialKeyboardIndicators -Value '2147483650' -ErrorAction SilentlyContinue
+            } }
+        @{ Label = 'Отключить рекламу/советы (локскрин, подсказки)'; Do = {
+                foreach ($n in 'RotatingLockScreenEnabled', 'RotatingLockScreenOverlayEnabled', 'SoftLandingEnabled', 'ContentDeliveryAllowed', 'SubscribedContent-338387Enabled', 'SubscribedContent-338393Enabled', 'SubscribedContent-353696Enabled', 'SubscribedContent-353698Enabled', 'SubscribedContent-310093Enabled') {
+                    Set-ItemProperty $cdm -Name $n -Value 0 -ErrorAction SilentlyContinue
+                }
+                # «Познакомьтесь с Windows» / «Завершите настройку» после обновлений
+                $upe = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\UserProfileEngagement'
+                New-Item -Path $upe -Force | Out-Null
+                Set-ItemProperty $upe -Name ScoobeSystemSettingEnabled -Value 0 -ErrorAction SilentlyContinue
+                # реклама OneDrive/синхронизации в проводнике
+                Set-ItemProperty $adv -Name ShowSyncProviderNotifications -Value 0 -ErrorAction SilentlyContinue
+            } }
         @{ Label = 'Эффекты: быстродействие (кроме шрифтов/эскизов/перетаскивания)'; Do = {
                 Set-ItemProperty $vfx  -Name VisualFXSetting -Value 3 -Type DWord -ErrorAction SilentlyContinue
                 Set-ItemProperty $desk -Name UserPreferencesMask -Value ([byte[]](0x90, 0x12, 0x03, 0x80, 0x10, 0x00, 0x00, 0x00)) -Type Binary -ErrorAction SilentlyContinue
