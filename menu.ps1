@@ -623,6 +623,7 @@ function Invoke-LightTweak {
     $desk   = 'HKCU:\Control Panel\Desktop'
     $vfx    = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects'
     $wmet   = 'HKCU:\Control Panel\Desktop\WindowMetrics'
+    $dwm    = 'HKCU:\Software\Microsoft\Windows\DWM'
 
     $tweaks = @(
         @{ Label = 'Показывать расширения файлов';            Do = { Set-ItemProperty $adv -Name HideFileExt -Value 0 -ErrorAction SilentlyContinue } }
@@ -652,6 +653,7 @@ function Invoke-LightTweak {
                 Set-ItemProperty $adv  -Name ListviewAlphaSelect -Value 0 -ErrorAction SilentlyContinue
                 Set-ItemProperty $adv  -Name ListviewShadow -Value 0 -ErrorAction SilentlyContinue
                 Set-ItemProperty $adv  -Name TaskbarAnimations -Value 0 -ErrorAction SilentlyContinue
+                Set-ItemProperty $dwm  -Name EnableAeroPeek -Value 0 -Type DWord -ErrorAction SilentlyContinue    # «Включить Peek» off
                 # исключения — оставляем включёнными:
                 Set-ItemProperty $desk -Name DragFullWindows -Value '1' -Type String -ErrorAction SilentlyContinue    # содержимое окна при перетаскивании
                 Set-ItemProperty $desk -Name FontSmoothing -Value '2' -Type String -ErrorAction SilentlyContinue      # сглаживание шрифтов
@@ -856,6 +858,17 @@ function Invoke-NewPC {
         Write-Host "   требует прав администратора. Лучше выйти и запустить [A].`n" -ForegroundColor Yellow
     }
     if ((Read-Host "   Начать настройку нового ПК? (y/n)").Trim().ToLower() -ne 'y') { return }
+
+    # Восстановление системы — включаем ПЕРЕД точкой, иначе точки не создаются.
+    if (Test-Admin) {
+        try {
+            Enable-ComputerRestore -Drive "$env:SystemDrive\" -ErrorAction Stop
+            # чтобы точки создавались чаще одного раза в сутки (иначе Windows пропускает)
+            New-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore' -Force | Out-Null
+            Set-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore' -Name SystemRestorePointCreationFrequency -Value 0 -Type DWord -ErrorAction SilentlyContinue
+            Write-Host "`n  Восстановление системы включено на $env:SystemDrive" -ForegroundColor Green
+        } catch { Write-Host "`n  Восстановление системы включить не удалось: $($_.Exception.Message)" -ForegroundColor Yellow }
+    } else { Write-Host "`n  Восстановление системы — нужен админ, пропускаю." -ForegroundColor Yellow }
 
     Add-RestorePoint 'Перед настройкой Новый ПК (HH Toolbox)'
     # 1/6 — программы
