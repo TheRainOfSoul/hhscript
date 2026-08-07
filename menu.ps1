@@ -714,12 +714,11 @@ function Install-DellDriver {
     if (-not (Confirm-Winget)) { Write-Host "   Нужен winget для Dell Command Update." -ForegroundColor Yellow; return }
     Write-Host "   Установка Dell Command Update (официальный инструмент Dell)..." -ForegroundColor DarkGray
     winget install --id Dell.CommandUpdate.Universal -e --source winget --accept-package-agreements --accept-source-agreements
-    $dcu = @("$env:ProgramFiles\Dell\CommandUpdate\dcu-cli.exe", "${env:ProgramFiles(x86)}\Dell\CommandUpdate\dcu-cli.exe") |
+    $exe = @("$env:ProgramFiles\Dell\CommandUpdate\DellCommandUpdate.exe", "${env:ProgramFiles(x86)}\Dell\CommandUpdate\DellCommandUpdate.exe") |
         Where-Object { Test-Path $_ } | Select-Object -First 1
-    if (-not $dcu) { Write-Host "   dcu-cli не найден — запусти Dell Command Update вручную." -ForegroundColor Yellow; return }
-    Write-Host "   Поиск и установка драйверов с сайта Dell..." -ForegroundColor DarkGray
-    & $dcu /scan
-    & $dcu /applyUpdates -reboot=disable
+    if (-not $exe) { $exe = (Get-ChildItem "$env:ProgramFiles\Dell", "${env:ProgramFiles(x86)}\Dell" -Recurse -Filter 'DellCommandUpdate.exe' -ErrorAction SilentlyContinue | Select-Object -First 1).FullName }
+    if ($exe) { Write-Host "   Запускаю Dell Command Update..." -ForegroundColor Cyan; Start-Process $exe }
+    else { Write-Host "   Dell Command Update не найден — открываю страницу Dell." -ForegroundColor Yellow; Start-Process 'https://www.dell.com/support/home' }
 }
 
 function Install-HpDriver {
@@ -736,30 +735,43 @@ function Install-HpDriver {
         Start-Process 'https://support.hp.com/us-en/drivers'
         return
     }
-    Write-Host "   Анализ и установка драйверов с сайта HP (HPIA)..." -ForegroundColor DarkGray
-    & $hpia /Operation:Analyze /Category:Drivers /Selection:All /Action:Install /Silent /ReportFolder:"$env:TEMP\HPIA"
+    Write-Host "   Запускаю HP Image Assistant..." -ForegroundColor Cyan
+    Start-Process $hpia
 }
 
 function Install-LenovoDriver {
+    # ВАЖНО: Thin Installer обслуживает ТОЛЬКО коммерческие модели (ThinkPad/
+    # ThinkCentre/ThinkStation/ThinkBook). На потребительских (IdeaPad/Legion/Yoga)
+    # он не находит драйверов — им нужен сайт Lenovo с авто-определением модели.
+    $model = "$((Get-CimInstance Win32_ComputerSystemProduct -ErrorAction SilentlyContinue).Version)"
+    if ($model -notmatch 'Think') {
+        Write-Host "   Модель «$model» — потребительская Lenovo; Thin Installer её НЕ обслуживает." -ForegroundColor Yellow
+        Write-Host "   Открываю сайт Lenovo с авто-определением драйверов под этот ноутбук..." -ForegroundColor Cyan
+        Start-Process 'https://pcsupport.lenovo.com/'
+        return
+    }
     if (-not (Confirm-Winget)) { Write-Host "   Нужен winget для Lenovo Thin Installer." -ForegroundColor Yellow; return }
     Write-Host "   Установка Lenovo Thin Installer..." -ForegroundColor DarkGray
     winget install --id Lenovo.ThinInstaller -e --source winget --accept-package-agreements --accept-source-agreements
     $ti = @("${env:ProgramFiles(x86)}\Lenovo\ThinInstaller\ThinInstaller.exe", "$env:ProgramFiles\Lenovo\ThinInstaller\ThinInstaller.exe") |
         Where-Object { Test-Path $_ } | Select-Object -First 1
+    if (-not $ti) { $ti = (Get-ChildItem "${env:ProgramFiles(x86)}\Lenovo", "$env:ProgramFiles\Lenovo" -Recurse -Filter 'ThinInstaller.exe' -ErrorAction SilentlyContinue | Select-Object -First 1).FullName }
     if (-not $ti) {
-        Write-Host "   ThinInstaller.exe не найден — открываю страницу драйверов Lenovo." -ForegroundColor Yellow
-        Start-Process 'https://support.lenovo.com/solutions/ht003029'
+        Write-Host "   ThinInstaller.exe не найден — открываю сайт Lenovo." -ForegroundColor Yellow
+        Start-Process 'https://pcsupport.lenovo.com/'
         return
     }
-    Write-Host "   Поиск и установка драйверов с сайта Lenovo (Thin Installer)..." -ForegroundColor DarkGray
-    & $ti /CM -search A -action INSTALL -includerebootpackages 1, 3, 4 -noreboot -noicon
+    Write-Host "   Запускаю Lenovo Thin Installer..." -ForegroundColor Cyan
+    Start-Process $ti
 }
 
 function Install-IntelDriver {
     if (-not (Confirm-Winget)) { Write-Host "   Нужен winget для Intel DSA." -ForegroundColor Yellow; return }
     Write-Host "   Установка Intel Driver & Support Assistant..." -ForegroundColor DarkGray
     winget install --id Intel.IntelDriverAndSupportAssistant -e --source winget --accept-package-agreements --accept-source-agreements
-    Write-Host "   У Intel нет тихого CLI — открываю DSA для сканирования и установки..." -ForegroundColor Yellow
+    $dsa = Get-ChildItem "${env:ProgramFiles(x86)}\Intel", "$env:ProgramFiles\Intel" -Recurse -Filter 'DSATray.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($dsa) { Write-Host "   Запускаю Intel Driver & Support Assistant..." -ForegroundColor Cyan; Start-Process $dsa.FullName }
+    Write-Host "   Открываю страницу проверки драйверов Intel (веб-интерфейс DSA)..." -ForegroundColor DarkGray
     Start-Process 'https://www.intel.com/content/www/us/en/support/detect.html'
 }
 
