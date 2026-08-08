@@ -21,7 +21,7 @@
 - Твики — по функции на каждый (`tw_update`, `tw_ufw`, `tw_fail2ban`, `tw_unattended`, `tw_timezone`, `tw_swap`, `tw_hostname`, `tw_bbr`, `tw_ssh_harden`). Разрушительные — с подтверждением; SSH-хардненинг — с явным предупреждением о риске локаута.
 
 ## Доставка (Cloudflare, настраивает пользователь)
-- `win.hhtdom.ru` → тот же контент, что `get.hhtdom.ru` (menu.ps1). В коде `$LauncherUrl = 'https://win.hhtdom.ru'`.
+- `win.hhtdom.ru` → menu.ps1 (единственный Windows-домен; `get.hhtdom.ru` не используется). В коде `$LauncherUrl = 'https://win.hhtdom.ru'`.
 - `lin.hhtdom.ru` → raw `linux.sh`.
 
 ## Тесты / CI
