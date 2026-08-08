@@ -30,3 +30,12 @@
 
 ## Вне области v1
 - Не-apt дистрибутивы (RHEL/Arch/SUSE). GUI для Linux. Специфичные стеки (кроме Docker/nginx как пакетов).
+
+## v1.1 — расширение (утверждено)
+Четыре новых раздела главного меню, всё на тех же `ui_*` / `/dev/tty` / `sudo` / `ensure_pkg`:
+- **Диагностика сети:** пинг-скан подсети, скан камер/NVR по CCTV-портам, проверка RTSP (`/dev/tcp` + опц. `ffprobe`), `mtr`, `iperf3` (сервер `-1`/клиент), `speedtest`.
+- **Docker и сервисы:** установка через `get.docker.com`; деплой галочками Portainer (docker run), Nginx Proxy Manager (compose в `/opt/npm`), Watchtower.
+- **WireGuard VPN:** сервер `wg0` (сеть `10.66.66.0/24`, NAT через PostUp/PostDown iptables, IP-forward, автозапуск), добавление клиента с QR (`qrencode -t ansiutf8`); ключ сервера и endpoint хранятся в комментариях `wg0.conf`.
+- **Пользователи и доступ:** `adduser --disabled-password` + `passwd` (скрытый ввод с /dev/tty) + группа sudo; SSH-ключ в `authorized_keys`; смена порта SSH (сначала `ufw allow`, затем рестарт, предупреждение о локауте); бэкап `rsync`+`cron` (идемпотентно по маркеру).
+
+Тестирование: bash -n + shellcheck + навигация в plain через pty на WSL. Docker/WireGuard/systemd/root-действия — только на реальном VPS.

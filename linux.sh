@@ -55,6 +55,18 @@ ensure_pkg() {
   $SUDO apt-get update -qq && $SUDO apt-get install -y "$p"
 }
 
+# текущая подсеть в формате CIDR (напр. 192.168.1.50/24) — для сканов по умолчанию
+default_cidr() {
+  local dev
+  dev=$(ip route 2>/dev/null | awk '/default/{print $5; exit}')
+  ip -o -f inet addr show "$dev" 2>/dev/null | awk '{print $4; exit}'
+}
+
+# пейджер для длинного вывода (читает stdin, клавиши less берёт с /dev/tty сам)
+page() {
+  if command -v less >/dev/null 2>&1; then less -RFX >/dev/tty; else cat >/dev/tty; fi
+}
+
 # --- UI-слой: gum или plain ------------------------------------------------
 UI=plain
 GUM=""
@@ -347,11 +359,7 @@ sec_commands() {
       desc=${item%%@@*}; cmd=${item#*@@}
       if [ "$desc" = "$pick" ]; then
         { printf '\n$ %s\n\n' "$cmd"; } >/dev/tty
-        if command -v less >/dev/null 2>&1; then
-          eval "$cmd" 2>&1 | less -RFX >/dev/tty
-        else
-          eval "$cmd" >/dev/tty 2>&1
-        fi
+        eval "$cmd" 2>&1 | page
         pause
         break
       fi
@@ -441,6 +449,407 @@ tw_ssh_harden() {
 }
 
 # ===========================================================================
+# ДИАГНОСТИКА СЕТИ
+# ===========================================================================
+
+sec_netdiag() {
+  local pick
+  while :; do
+    pick=$(ui_menu "Диагностика сети" \
+      "Пинг-скан подсети (живые хосты)" \
+      "Скан камер/NVR (порты CCTV)" \
+      "Проверка RTSP-порта камеры" \
+      "mtr — трасса с потерями" \
+      "iperf3 — замер скорости между узлами" \
+      "speedtest — скорость до интернета" \
+      "← Назад") || return
+    case "$pick" in
+      "Пинг-скан"*)  nd_pingscan ;;
+      "Скан камер"*) nd_camscan ;;
+      "Проверка RTSP"*) nd_rtsp ;;
+      "mtr"*)        nd_mtr ;;
+      "iperf3"*)     nd_iperf ;;
+      "speedtest"*)  nd_speedtest ;;
+      *) return ;;
+    esac
+  done
+}
+
+nd_pingscan() {
+  ensure_pkg nmap || { pause; return; }
+  local d; d=$(ui_input "Подсеть/CIDR для скана" "$(default_cidr)")
+  [ -n "$d" ] || return
+  ui_msg "Пинг-скан $d ..."
+  $SUDO nmap -sn "$d" 2>&1 | page
+  pause
+}
+
+nd_camscan() {
+  ensure_pkg nmap || { pause; return; }
+  local t; t=$(ui_input "Хост или подсеть (камера/NVR)" "$(default_cidr)")
+  [ -n "$t" ] || return
+  ui_msg "Ищу камеры/NVR в $t" "порты 80,443,554,8000,37777,34567,8899,88 ..."
+  $SUDO nmap -p 80,443,554,8000,37777,34567,8899,88 --open "$t" 2>&1 | page
+  pause
+}
+
+nd_rtsp() {
+  local h port
+  h=$(ui_input "IP камеры" ""); [ -n "$h" ] || return
+  port=$(ui_input "RTSP-порт" "554")
+  if timeout 3 bash -c "exec 3<>/dev/tcp/$h/$port" 2>/dev/null; then
+    ui_msg "Порт $h:$port ОТКРЫТ — RTSP слушает."
+    if command -v ffprobe >/dev/null 2>&1; then
+      local url; url=$(ui_input "RTSP URL для ffprobe" "rtsp://$h:$port/")
+      [ -n "$url" ] && ffprobe -v error -rtsp_transport tcp -show_streams \
+        -of default=noprint_wrappers=1 "$url" 2>&1 | page
+    else
+      ui_msg "Установи пакет ffmpeg — тогда проверю сам поток (ffprobe): разрешение/кодек."
+    fi
+  else
+    ui_msg "Порт $h:$port закрыт или недоступен."
+  fi
+  pause
+}
+
+nd_mtr() {
+  ensure_pkg mtr-tiny || ensure_pkg mtr || { pause; return; }
+  local h; h=$(ui_input "Хост назначения" "1.1.1.1"); [ -n "$h" ] || return
+  ui_msg "mtr до $h (10 циклов)..."
+  $SUDO mtr -rwc 10 "$h" 2>&1 | page
+  pause
+}
+
+nd_iperf() {
+  ensure_pkg iperf3 || { pause; return; }
+  local mode h
+  mode=$(ui_menu "iperf3" \
+    "Сервер (принять один замер)" \
+    "Клиент (подключиться к серверу)" \
+    "← Назад") || return
+  case "$mode" in
+    "Сервер"*)
+      ui_msg "iperf3 -s на порту 5201 — жду один замер от клиента..."
+      iperf3 -s -1 >/dev/tty 2>&1 ;;
+    "Клиент"*)
+      h=$(ui_input "IP сервера iperf3" ""); [ -n "$h" ] || return
+      iperf3 -c "$h" 2>&1 | page ;;
+    *) return ;;
+  esac
+  pause
+}
+
+nd_speedtest() {
+  ensure_pkg speedtest-cli || { pause; return; }
+  ui_msg "Замер скорости до интернета..."
+  speedtest-cli 2>&1 | page
+  pause
+}
+
+# ===========================================================================
+# DOCKER И СЕРВИСЫ
+# ===========================================================================
+
+sec_docker() {
+  local pick
+  while :; do
+    pick=$(ui_menu "Docker и сервисы" \
+      "Установить Docker + compose" \
+      "Развернуть готовые стеки (галочки)" \
+      "Статус контейнеров" \
+      "← Назад") || return
+    case "$pick" in
+      "Установить Docker"*) dk_install ;;
+      "Развернуть"*)        dk_stacks ;;
+      "Статус"*)            dk_status ;;
+      *) return ;;
+    esac
+  done
+}
+
+dk_install() {
+  if command -v docker >/dev/null 2>&1; then
+    ui_msg "Docker уже установлен: $(docker --version)"; pause; return
+  fi
+  ui_yesno "Установить Docker через официальный скрипт get.docker.com?" || return
+  ui_msg "Устанавливаю Docker..."
+  fetch - https://get.docker.com | $SUDO sh
+  $SUDO systemctl enable --now docker 2>/dev/null
+  if [ -n "$SUDO" ]; then
+    $SUDO usermod -aG docker "$USER"
+    ui_msg "Пользователь $USER добавлен в группу docker — перелогинься, чтобы работало без sudo."
+  fi
+  docker --version >/dev/tty 2>&1
+  pause
+}
+
+dk_stacks() {
+  command -v docker >/dev/null 2>&1 || { ui_msg "Сначала установи Docker."; pause; return; }
+  local sel t
+  sel=$(ui_checklist "Готовые стеки — отметь галочками" \
+    "portainer|Portainer — веб-панель Docker (порт 9443)" \
+    "npm|Nginx Proxy Manager — реверс-прокси + HTTPS (порт 81)" \
+    "watchtower|Watchtower — автообновление контейнеров") || return
+  [ -n "$sel" ] || { ui_msg "Ничего не выбрано."; pause; return; }
+  while IFS= read -r t; do
+    [ -n "$t" ] || continue
+    if declare -F "dk_deploy_$t" >/dev/null; then "dk_deploy_$t"; fi
+  done <<< "$sel"
+  pause
+}
+
+dk_deploy_portainer() {
+  $SUDO docker volume create portainer_data >/dev/null 2>&1
+  $SUDO docker rm -f portainer >/dev/null 2>&1 || true
+  $SUDO docker run -d --name portainer --restart=always \
+    -p 8000:8000 -p 9443:9443 \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v portainer_data:/data portainer/portainer-ce:latest
+  ui_msg "Portainer поднят: https://<IP-сервера>:9443 (при первом входе задашь пароль admin)."
+}
+
+dk_deploy_npm() {
+  local dir=/opt/npm
+  $SUDO mkdir -p "$dir"
+  $SUDO tee "$dir/docker-compose.yml" >/dev/null <<'YML'
+services:
+  app:
+    image: jc21/nginx-proxy-manager:latest
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "81:81"
+      - "443:443"
+    volumes:
+      - ./data:/data
+      - ./letsencrypt:/etc/letsencrypt
+YML
+  ( cd "$dir" && $SUDO docker compose up -d )
+  ui_msg "Nginx Proxy Manager: http://<IP-сервера>:81" "Вход по умолчанию: admin@example.com / changeme"
+}
+
+dk_deploy_watchtower() {
+  $SUDO docker rm -f watchtower >/dev/null 2>&1 || true
+  $SUDO docker run -d --name watchtower --restart=always \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    containrrr/watchtower --cleanup
+  ui_msg "Watchtower запущен — контейнеры будут обновляться автоматически."
+}
+
+dk_status() {
+  command -v docker >/dev/null 2>&1 || { ui_msg "Docker не установлен."; pause; return; }
+  { $SUDO docker ps; printf '\n--- compose-проекты ---\n'; $SUDO docker compose ls 2>/dev/null; } 2>&1 | page
+  pause
+}
+
+# ===========================================================================
+# WIREGUARD VPN
+# ===========================================================================
+
+WG_CONF=/etc/wireguard/wg0.conf
+WG_NET=10.66.66
+WG_PORT=51820
+
+sec_wireguard() {
+  local pick
+  while :; do
+    pick=$(ui_menu "WireGuard VPN" \
+      "Поднять сервер" \
+      "Добавить клиента (QR)" \
+      "Статус / список клиентов" \
+      "← Назад") || return
+    case "$pick" in
+      "Поднять сервер")   wg_setup_server ;;
+      "Добавить клиента"*) wg_add_client ;;
+      "Статус"*)          wg_status ;;
+      *) return ;;
+    esac
+  done
+}
+
+wg_setup_server() {
+  ensure_pkg wireguard || { pause; return; }
+  ensure_pkg iptables >/dev/null 2>&1 || true
+  ensure_pkg qrencode >/dev/null 2>&1 || true
+  if [ -f "$WG_CONF" ]; then
+    ui_yesno "Сервер wg0 уже настроен. Перенастроить заново (сотрёт клиентов)?" || return
+    $SUDO systemctl stop wg-quick@wg0 2>/dev/null
+  fi
+  local nic pub port skey spub
+  nic=$(ip route 2>/dev/null | awk '/default/{print $5; exit}')
+  pub=$(fetch - https://api.ipify.org 2>/dev/null)
+  pub=$(ui_input "Внешний IP/домен сервера" "${pub:-}"); [ -n "$pub" ] || return
+  port=$(ui_input "UDP-порт" "$WG_PORT")
+  skey=$(wg genkey); spub=$(printf '%s' "$skey" | wg pubkey)
+  $SUDO mkdir -p /etc/wireguard
+  $SUDO tee "$WG_CONF" >/dev/null <<CONF
+[Interface]
+Address = ${WG_NET}.1/24
+ListenPort = ${port}
+PrivateKey = ${skey}
+PostUp = iptables -t nat -A POSTROUTING -o ${nic} -j MASQUERADE; iptables -A FORWARD -i wg0 -j ACCEPT; iptables -A FORWARD -o wg0 -j ACCEPT
+PostDown = iptables -t nat -D POSTROUTING -o ${nic} -j MASQUERADE; iptables -D FORWARD -i wg0 -j ACCEPT; iptables -D FORWARD -o wg0 -j ACCEPT
+# HH_ENDPOINT=${pub}:${port}
+# HH_SERVERPUB=${spub}
+CONF
+  $SUDO chmod 600 "$WG_CONF"
+  echo 'net.ipv4.ip_forward=1' | $SUDO tee /etc/sysctl.d/99-wg.conf >/dev/null
+  $SUDO sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1
+  command -v ufw >/dev/null 2>&1 && $SUDO ufw allow "${port}/udp" >/dev/null 2>&1
+  $SUDO systemctl enable --now wg-quick@wg0
+  ui_msg "Сервер WireGuard поднят (wg0, сеть ${WG_NET}.0/24, порт ${port})." \
+         "Теперь добавь клиента, чтобы получить конфиг с QR."
+  pause
+}
+
+wg_add_client() {
+  [ -f "$WG_CONF" ] || { ui_msg "Сначала подними сервер."; pause; return; }
+  local name; name=$(ui_input "Имя клиента (латиницей)" "client1"); [ -n "$name" ] || return
+  local spriv spub endpoint n ip ckey cpub psk out ccfg
+  spriv=$($SUDO grep -m1 '^PrivateKey' "$WG_CONF" | awk '{print $3}')
+  spub=$(printf '%s' "$spriv" | wg pubkey)
+  endpoint=$($SUDO grep -m1 '^# HH_ENDPOINT=' "$WG_CONF" | cut -d= -f2)
+  n=2
+  while $SUDO grep -q "AllowedIPs = ${WG_NET}.${n}/32" "$WG_CONF" 2>/dev/null; do n=$((n+1)); done
+  ip="${WG_NET}.${n}"
+  ckey=$(wg genkey); cpub=$(printf '%s' "$ckey" | wg pubkey); psk=$(wg genpsk)
+  $SUDO tee -a "$WG_CONF" >/dev/null <<PEER
+
+[Peer]
+# HH_CLIENT=${name}
+PublicKey = ${cpub}
+PresharedKey = ${psk}
+AllowedIPs = ${ip}/32
+PEER
+  # применить на лету, иначе — перезапуск интерфейса
+  $SUDO wg set wg0 peer "$cpub" preshared-key <(printf '%s' "$psk") allowed-ips "${ip}/32" 2>/dev/null \
+    || $SUDO systemctl restart wg-quick@wg0
+  ccfg="[Interface]
+PrivateKey = ${ckey}
+Address = ${ip}/24
+DNS = 1.1.1.1
+
+[Peer]
+PublicKey = ${spub}
+PresharedKey = ${psk}
+Endpoint = ${endpoint}
+AllowedIPs = 0.0.0.0/0
+PersistentKeepalive = 25"
+  { printf '\n=== Конфиг клиента %s ===\n\n%s\n\n' "$name" "$ccfg"; } >/dev/tty
+  if command -v qrencode >/dev/null 2>&1; then
+    { printf '=== QR (сканируй в приложении WireGuard) ===\n\n'; } >/dev/tty
+    printf '%s' "$ccfg" | qrencode -t ansiutf8 >/dev/tty
+  else
+    ui_msg "Установи пакет qrencode для QR-кода. Конфиг выше скопируй вручную."
+  fi
+  out="/etc/wireguard/${name}.conf"
+  printf '%s\n' "$ccfg" | $SUDO tee "$out" >/dev/null
+  $SUDO chmod 600 "$out"
+  ui_msg "Конфиг клиента сохранён: $out"
+  pause
+}
+
+wg_status() {
+  command -v wg >/dev/null 2>&1 || { ui_msg "WireGuard не установлен."; pause; return; }
+  {
+    $SUDO wg show
+    printf '\nКлиенты в конфиге:\n'
+    $SUDO grep '# HH_CLIENT=' "$WG_CONF" 2>/dev/null | sed 's/# HH_CLIENT=/  - /' || printf '  (нет)\n'
+  } 2>&1 | page
+  pause
+}
+
+# ===========================================================================
+# ПОЛЬЗОВАТЕЛИ И ДОСТУП
+# ===========================================================================
+
+sec_users() {
+  local pick
+  while :; do
+    pick=$(ui_menu "Пользователи и доступ" \
+      "Создать sudo-пользователя" \
+      "Добавить SSH-ключ пользователю" \
+      "Сменить порт SSH" \
+      "Бэкап по расписанию (rsync + cron)" \
+      "← Назад") || return
+    case "$pick" in
+      "Создать sudo"*)   usr_add ;;
+      "Добавить SSH"*)   usr_addkey ;;
+      "Сменить порт SSH") usr_sshport ;;
+      "Бэкап"*)          usr_backup ;;
+      *) return ;;
+    esac
+  done
+}
+
+usr_add() {
+  local u; u=$(ui_input "Имя нового пользователя" ""); [ -n "$u" ] || return
+  if id "$u" >/dev/null 2>&1; then ui_msg "Пользователь $u уже существует."; pause; return; fi
+  $SUDO adduser --disabled-password --gecos "" "$u"
+  ui_msg "Задай пароль для $u (ввод скрыт):"
+  $SUDO passwd "$u" </dev/tty
+  $SUDO usermod -aG sudo "$u"
+  ui_msg "Пользователь $u создан и добавлен в группу sudo."
+  pause
+}
+
+usr_addkey() {
+  local u key dir
+  u=$(ui_input "Пользователь" "$USER"); [ -n "$u" ] || return
+  id "$u" >/dev/null 2>&1 || { ui_msg "Нет такого пользователя: $u"; pause; return; }
+  key=$(ui_input "Вставь публичный SSH-ключ (ssh-ed25519/ssh-rsa ...)" "")
+  case "$key" in ssh-*) : ;; *) ui_msg "Это не похоже на публичный ключ (должен начинаться с ssh-)."; pause; return ;; esac
+  dir=$(getent passwd "$u" | cut -d: -f6)/.ssh
+  $SUDO mkdir -p "$dir"
+  printf '%s\n' "$key" | $SUDO tee -a "$dir/authorized_keys" >/dev/null
+  $SUDO chmod 700 "$dir"; $SUDO chmod 600 "$dir/authorized_keys"
+  $SUDO chown -R "$u:$u" "$dir"
+  ui_msg "Ключ добавлен пользователю $u."
+  pause
+}
+
+usr_sshport() {
+  local cur p d f
+  cur=$($SUDO grep -rhm1 '^Port ' /etc/ssh/sshd_config /etc/ssh/sshd_config.d/ 2>/dev/null | awk '{print $2; exit}')
+  [ -n "$cur" ] || cur=22
+  p=$(ui_input "Новый порт SSH" "$cur"); [ -n "$p" ] || return
+  case "$p" in ''|*[!0-9]*) ui_msg "Порт должен быть числом."; pause; return ;; esac
+  ui_msg "ВНИМАНИЕ: открою порт $p в UFW, затем сменю порт и перезапущу SSH." \
+         "НЕ закрывай текущую сессию, пока не проверишь вход на новом порту!"
+  ui_yesno "Продолжить?" || return
+  command -v ufw >/dev/null 2>&1 && $SUDO ufw allow "${p}/tcp" >/dev/null 2>&1
+  d=/etc/ssh/sshd_config.d
+  if [ -d "$d" ]; then
+    f="$d/99-hh-port.conf"; printf 'Port %s\n' "$p" | $SUDO tee "$f" >/dev/null
+  else
+    $SUDO sed -i "s/^#\?Port .*/Port $p/" /etc/ssh/sshd_config
+  fi
+  $SUDO systemctl restart ssh 2>/dev/null || $SUDO systemctl restart sshd 2>/dev/null
+  ui_msg "SSH теперь на порту $p. Проверь из НОВОГО окна:  ssh -p $p пользователь@хост"
+  pause
+}
+
+usr_backup() {
+  ensure_pkg rsync || { pause; return; }
+  local src dst freq sched mark cronline
+  src=$(ui_input "Что бэкапить (каталог-источник)" "/etc"); [ -n "$src" ] || return
+  dst=$(ui_input "Куда складывать (каталог-назначение)" "/var/backups/hh"); [ -n "$dst" ] || return
+  freq=$(ui_menu "Как часто?" "Ежедневно (03:00)" "Еженедельно (вс 03:00)" "Ежечасно" "← Отмена") || return
+  case "$freq" in
+    "Ежедневно"*)   sched="0 3 * * *" ;;
+    "Еженедельно"*) sched="0 3 * * 0" ;;
+    "Ежечасно")     sched="0 * * * *" ;;
+    *) return ;;
+  esac
+  $SUDO mkdir -p "$dst"
+  mark="# HH-backup ${src}"
+  cronline="${sched} rsync -a --delete '${src}' '${dst}' ${mark}"
+  { $SUDO crontab -l 2>/dev/null | grep -vF "$mark"; printf '%s\n' "$cronline"; } | $SUDO crontab -
+  ui_msg "Бэкап настроен: $src -> $dst ($freq)." "Задание записано в crontab root."
+  pause
+}
+
+# ===========================================================================
 # ГЛАВНЫЙ ЦИКЛ
 # ===========================================================================
 
@@ -456,12 +865,20 @@ main() {
       "Информация о системе и сеть" \
       "Установка программ (галочки)" \
       "Твики и настройка сервера" \
+      "Диагностика сети" \
+      "Docker и сервисы" \
+      "WireGuard VPN" \
+      "Пользователи и доступ" \
       "Справочник команд" \
       "Выход") || break
     case "$pick" in
       "Информация о системе и сеть") sec_sysinfo ;;
       "Установка программ (галочки)") sec_install ;;
       "Твики и настройка сервера")    sec_tweaks ;;
+      "Диагностика сети")             sec_netdiag ;;
+      "Docker и сервисы")             sec_docker ;;
+      "WireGuard VPN")                sec_wireguard ;;
+      "Пользователи и доступ")        sec_users ;;
       "Справочник команд")            sec_commands ;;
       "Выход"|"") break ;;
     esac
