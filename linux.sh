@@ -250,6 +250,20 @@ APT_ITEMS=(
   "nginx|nginx — веб-сервер / reverse proxy"
   "fzf|fzf — нечёткий поиск"
   "jq|jq — обработка JSON"
+  "ffmpeg|ffmpeg — конвертация + ffprobe (проверка RTSP-потоков камер)"
+  "v4l-utils|v4l-utils — работа с USB-камерами (v4l2)"
+  "tcpdump|tcpdump — захват сетевого трафика"
+  "traceroute|traceroute — трассировка маршрута"
+  "whois|whois — сведения о домене/IP"
+  "arp-scan|arp-scan — поиск устройств в LAN по MAC (камеры, NVR)"
+  "vnstat|vnstat — учёт трафика по интерфейсам"
+  "ethtool|ethtool — параметры сетевой карты (скорость/дуплекс)"
+  "socat|socat — универсальный ретранслятор сокетов"
+  "bat|bat — cat с подсветкой синтаксиса"
+  "ripgrep|ripgrep (rg) — быстрый поиск по тексту/логам"
+  "screen|screen — сохранение сессий терминала"
+  "tldr|tldr — краткие примеры по командам"
+  "lsof|lsof — кто держит файлы/порты"
 )
 
 # твики:  "tag|описание"  (функция tw_<tag>)

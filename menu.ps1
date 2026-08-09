@@ -70,6 +70,30 @@ $Programs = @(
     @{ Name = 'SADP (Hikvision)';     Yadisk = 'https://disk.yandex.ru/d/E8HX0NivegXgRQ' }
     @{ Name = 'HiTools Delivery (Hikvision)'; Yadisk = 'https://disk.yandex.ru/d/3LJjK0CS-HZqwQ' }
     @{ Name = 'iVMS-4200 (Hikvision)'; Yadisk = 'https://disk.yandex.ru/d/U8nd7S3DwH8mtw' }
+    # --- CCTV — прочие вендоры (winget / страница загрузки) ---
+    @{ Group = 'CCTV — прочие вендоры'; Name = 'ONVIF Device Manager (универсальный)'; Url = 'https://sourceforge.net/projects/onvifdm/' }
+    @{ Name = 'Reolink Client';       Winget = 'Reolink.Reolink';                 Url = 'https://reolink.com/software-and-manual/' }
+    @{ Name = 'Uniview EZStation';    Url = 'https://global.uniview.com/Support/Download_Center/Tools/Software/' }
+    @{ Name = 'EZVIZ Studio';         Url = 'https://www.ezviz.com/download' }
+    @{ Name = 'Amcrest Surveillance Pro'; Url = 'https://amcrest.com/surveillance-pro' }
+    # --- Удалёнка (доп.) ---
+    @{ Group = 'Удалёнка (доп.)'; Name = 'RustDesk';           Winget = 'RustDesk.RustDesk';               Url = 'https://rustdesk.com/' }
+    @{ Name = 'TeamViewer';           Winget = 'TeamViewer.TeamViewer';           Url = 'https://www.teamviewer.com/download/' }
+    @{ Name = 'Tailscale';            Winget = 'Tailscale.Tailscale';             Url = 'https://tailscale.com/download/windows' }
+    @{ Name = 'WireGuard (клиент)';   Winget = 'WireGuard.WireGuard';             Url = 'https://www.wireguard.com/install/' }
+    @{ Name = 'UltraVNC';             Winget = 'uvncbvba.UltraVNC';               Url = 'https://uvnc.com/downloads/ultravnc.html' }
+    # --- Сеть — доп. инструменты ---
+    @{ Group = 'Сеть — доп.'; Name = 'NetSetMan (профили IP)'; Winget = 'NetSetMan.NetSetMan';             Url = 'https://www.netsetman.com/en/download' }
+    @{ Name = 'Fing Desktop';         Winget = 'Fing.Fing';                       Url = 'https://www.fing.com/products/fing-desktop' }
+    @{ Name = 'Npcap (для сниферов)'; Url = 'https://npcap.com/#download' }
+    @{ Name = 'WinMTR';               Winget = 'leeter.WinMTR';                   Url = 'https://github.com/White-Tiger/WinMTR/releases' }
+    # --- Утилиты (доп.) ---
+    @{ Group = 'Утилиты (доп.)'; Name = 'ShareX (скриншоты)';  Winget = 'ShareX.ShareX';                   Url = 'https://getsharex.com/' }
+    @{ Name = 'PowerToys';            Winget = 'Microsoft.PowerToys';             Url = 'https://github.com/microsoft/PowerToys/releases' }
+    @{ Name = 'FileZilla';            Winget = 'TimKosse.FileZilla.Client';       Url = 'https://filezilla-project.org/download.php' }
+    @{ Name = 'WinDirStat (диск)';    Winget = 'WinDirStat.WinDirStat';           Url = 'https://windirstat.net/' }
+    @{ Name = 'WinMerge (сравнение)'; Winget = 'WinMerge.WinMerge';               Url = 'https://winmerge.org/downloads/' }
+    @{ Name = 'Bitwarden (пароли)';   Winget = 'Bitwarden.Bitwarden';             Url = 'https://bitwarden.com/download/' }
     # --- Раскладки клавиатуры (MSKLC, фонетические, из репозитория) ---
     @{ Group = 'Раскладки клавиатуры'; Name = 'Русская фонетическая раскладка';  Layout = 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/layouts/RussianPhonetic.zip' }
     @{ Name = 'Армянская фонетическая раскладка'; Layout = 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/layouts/ArmenianPhonetic.zip' }

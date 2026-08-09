@@ -39,7 +39,9 @@ curl -fsSL https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/linux.s
 - **Информация о системе и сеть** — ОС, ядро, CPU, память, диск, шлюз, DNS,
   внешний IP, интерфейсы, слушающие порты.
 - **Установка программ галочками** — htop, btop, tmux, mc, ncdu, nmap, docker,
-  nginx, fail2ban, ufw и др. через `apt`.
+  nginx, fail2ban, ufw, а также ffmpeg (ffprobe для RTSP), tcpdump, traceroute,
+  whois, arp-scan, vnstat, ethtool, socat, bat, ripgrep, screen, tldr, lsof
+  и др. (36 шт.) через `apt`.
 - **Твики и настройка сервера** — обновления, UFW, fail2ban, автообновления
   безопасности, часовой пояс, swap, hostname, TCP BBR, хардненинг SSH.
 - **Диагностика сети** — пинг-скан подсети, скан камер/NVR по портам CCTV
@@ -73,16 +75,20 @@ curl -fsSL https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/linux.s
   авто, сброс сети) — всё inline, без тяжёлых внешних утилит. Чистка и твики —
   с выбором пунктов **галочками** (↑/↓ навигация, Пробел — отметить, A — все,
   Enter — применить, Esc — отмена; резервный режим — ввод номеров)
-- **Программы:** единый чек-лист установки **галочками** (37 шт., CLI+GUI):
+- **Программы:** единый чек-лист установки **галочками** (57 шт., CLI+GUI):
   браузер/архиватор (Chrome, 7-Zip, VLC, qBittorrent, Notepad++), удалёнка
-  (AnyDesk, TightVNC, mRemoteNG, MobaXterm), сеть (Advanced/Angry IP Scanner,
-  Nmap, Wireshark, Winbox, PuTTY, WinSCP, Speedtest CLI), система/диски
+  (AnyDesk, TightVNC, mRemoteNG, MobaXterm, **RustDesk, TeamViewer, Tailscale,
+  WireGuard, UltraVNC**), сеть (Advanced/Angry IP Scanner,
+  Nmap, Wireshark, Winbox, PuTTY, WinSCP, Speedtest CLI, **NetSetMan, Fing,
+  Npcap, WinMTR**), система/диски
   (Sysinternals, HWiNFO, CrystalDiskInfo/Mark, DiskGenius, TestDisk+PhotoRec,
-  WizTree, Everything, Glow), стресс
+  WizTree, Everything, Glow, **WinDirStat**), утилиты (**ShareX, PowerToys,
+  FileZilla, WinMerge, Bitwarden**), стресс
   (OCCT, FurMark), USB (Rufus, Ventoy), безопасность (Malwarebytes, KeePassXC),
   оболочка (PowerShell 7, Windows Terminal) — через `winget`; плюс CCTV (Dahua
-  ConfigTool/SmartPSS, Hikvision SADP/HiTools Delivery/iVMS-4200) — авто-загрузка
-  с Я.Диска через публичный API. Отдельный пункт **«Обновить весь софт»** (`winget upgrade --all`)
+  ConfigTool/SmartPSS, Hikvision SADP/HiTools Delivery/iVMS-4200 — авто-загрузка
+  с Я.Диска; **ONVIF Device Manager, Reolink, Uniview EZStation, EZVIZ, Amcrest**
+  — через winget/страницу загрузки). Отдельный пункт **«Обновить весь софт»** (`winget upgrade --all`)
 - **[8] Библиотеки и среды выполнения** — чек-лист runtime (по умолчанию всё
   отмечено): Visual C++ Redist (все 2005-2022, x86+x64), .NET Desktop Runtime 8/6,
   .NET Framework 3.5 (DISM), DirectX, Edge WebView2, Windows App Runtime,
