@@ -770,12 +770,14 @@ sec_users() {
       "Создать sudo-пользователя" \
       "Добавить SSH-ключ пользователю" \
       "Сменить порт SSH" \
+      "Обратный SSH-туннель (доступ за NAT)" \
       "Бэкап по расписанию (rsync + cron)" \
       "← Назад") || return
     case "$pick" in
       "Создать sudo"*)   usr_add ;;
       "Добавить SSH"*)   usr_addkey ;;
       "Сменить порт SSH") usr_sshport ;;
+      "Обратный SSH"*)   usr_revssh ;;
       "Бэкап"*)          usr_backup ;;
       *) return ;;
     esac
@@ -849,6 +851,220 @@ usr_backup() {
   pause
 }
 
+usr_revssh() {
+  ensure_pkg autossh || { pause; return; }
+  ui_msg "Обратный SSH-туннель: машина сама подключается к relay-серверу с белым IP" \
+         "и пробрасывает свой SSH обратно. Нужен уже настроенный SSH-КЛЮЧ к relay" \
+         "(autossh пароль не вводит — проверь, что 'ssh relay' пускает без пароля)."
+  local relay rport remote lport name svc
+  relay=$(ui_input "Relay: пользователь@хост (напр. root@vps.example.com)" ""); [ -n "$relay" ] || return
+  rport=$(ui_input "SSH-порт relay" "22")
+  remote=$(ui_input "Порт на relay для проброса (потом: ssh -p ЭТОТ localhost)" "2222")
+  lport=$(ui_input "Локальный порт этой машины" "22")
+  name=$(ui_input "Имя туннеля (латиницей)" "main"); [ -n "$name" ] || return
+  svc="hh-revssh-${name}"
+  $SUDO tee "/etc/systemd/system/${svc}.service" >/dev/null <<UNIT
+[Unit]
+Description=HH reverse SSH tunnel (${name}) -> ${relay}
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=${USER}
+Environment=AUTOSSH_GATETIME=0
+ExecStart=/usr/bin/autossh -M 0 -N -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=accept-new -p ${rport} -R ${remote}:localhost:${lport} ${relay}
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  $SUDO systemctl daemon-reload
+  $SUDO systemctl enable --now "$svc"
+  sleep 1
+  $SUDO systemctl --no-pager --full status "$svc" 2>&1 | head -n 12 >/dev/tty
+  ui_msg "Туннель '${name}' поднят как сервис ${svc}." \
+         "С relay: ssh -p ${remote} localhost — попадёшь на эту машину." \
+         "Если статус failed — проверь SSH-ключ к ${relay}."
+  pause
+}
+
+# ===========================================================================
+# СЕТЬ И ВЕБ
+# ===========================================================================
+
+sec_netweb() {
+  local pick
+  while :; do
+    pick=$(ui_menu "Сеть и веб" \
+      "Статический IP (netplan)" \
+      "Certbot — HTTPS для nginx" \
+      "← Назад") || return
+    case "$pick" in
+      "Статический IP"*) nw_static ;;
+      "Certbot"*)        nw_certbot ;;
+      *) return ;;
+    esac
+  done
+}
+
+nw_static() {
+  command -v netplan >/dev/null 2>&1 || { ui_msg "netplan не найден — нужен Ubuntu-сервер с netplan."; pause; return; }
+  local nic cur_ip cur_gw cur_dns ip gw dns dns_yaml f how
+  nic=$(ip route 2>/dev/null | awk '/default/{print $5; exit}')
+  nic=$(ui_input "Сетевой интерфейс" "${nic:-eth0}"); [ -n "$nic" ] || return
+  cur_ip=$(ip -o -f inet addr show "$nic" 2>/dev/null | awk '{print $4; exit}')
+  cur_gw=$(ip route 2>/dev/null | awk '/default/{print $3; exit}')
+  cur_dns=$(grep -h '^nameserver' /etc/resolv.conf 2>/dev/null | awk '{print $2}' | paste -sd, -)
+  ip=$(ui_input "IP/маска (CIDR, напр. 192.168.1.50/24)" "$cur_ip"); [ -n "$ip" ] || return
+  gw=$(ui_input "Шлюз" "$cur_gw")
+  dns=$(ui_input "DNS через запятую" "${cur_dns:-1.1.1.1,8.8.8.8}")
+  dns_yaml=$(printf '%s' "$dns" | sed 's/ *, */, /g')
+  ui_msg "ВНИМАНИЕ: смена IP разорвёт SSH-сессию, если адрес меняется!" \
+         "Убедись, что подключишься по новому адресу."
+  ui_yesno "Записать конфиг?" || return
+  f=/etc/netplan/99-hh.yaml
+  $SUDO tee "$f" >/dev/null <<YAML
+network:
+  version: 2
+  ethernets:
+    ${nic}:
+      dhcp4: false
+      addresses: [${ip}]
+      routes:
+        - to: default
+          via: ${gw}
+      nameservers:
+        addresses: [${dns_yaml}]
+YAML
+  $SUDO chmod 600 "$f"
+  how=$(ui_menu "Как применить?" \
+    "netplan try (безопасно — автооткат через 120 c)" \
+    "netplan apply (сразу)" \
+    "Только записать, не применять") || return
+  case "$how" in
+    "netplan try"*)   $SUDO netplan try </dev/tty ;;
+    "netplan apply"*) $SUDO netplan apply && ui_msg "Применено. Новый адрес: $ip" ;;
+    *) ui_msg "Конфиг записан в $f, не применён." ;;
+  esac
+  pause
+}
+
+nw_certbot() {
+  command -v nginx >/dev/null 2>&1 || ui_msg "nginx не установлен — сертификат прописывается в его конфиг. Поставь nginx в разделе «Установка»."
+  ensure_pkg certbot || { pause; return; }
+  ensure_pkg python3-certbot-nginx || { pause; return; }
+  local domain email args=() d
+  domain=$(ui_input "Домен (несколько — через пробел)" ""); [ -n "$domain" ] || return
+  email=$(ui_input "Email для Let's Encrypt (пусто — без email)" "")
+  ui_msg "Требуется: домен указывает на этот сервер (A-запись), порт 80 открыт, nginx запущен."
+  ui_yesno "Получить сертификат сейчас?" || return
+  for d in $domain; do args+=(-d "$d"); done
+  if [ -n "$email" ]; then
+    $SUDO certbot --nginx "${args[@]}" -m "$email" --agree-tos -n --redirect 2>&1 | page
+  else
+    $SUDO certbot --nginx "${args[@]}" --register-unsafely-without-email --agree-tos -n --redirect 2>&1 | page
+  fi
+  pause
+}
+
+# ===========================================================================
+# ОБСЛУЖИВАНИЕ И МОНИТОРИНГ
+# ===========================================================================
+
+sec_maint() {
+  local pick
+  while :; do
+    pick=$(ui_menu "Обслуживание и мониторинг" \
+      "Чистка системы (освободить место)" \
+      "netdata — веб-мониторинг" \
+      "SSH-логи и fail2ban" \
+      "← Назад") || return
+    case "$pick" in
+      "Чистка"*)   mt_clean ;;
+      "netdata"*)  mt_netdata ;;
+      "SSH-логи"*) mt_sshlog ;;
+      *) return ;;
+    esac
+  done
+}
+
+mt_clean() {
+  local before after
+  before=$(df -h / | awk 'NR==2{print $4}')
+  ui_msg "Будет: apt autoremove/clean + чистка журналов старше 7 дней" \
+         "(и docker prune, если Docker установлен — с отдельным подтверждением)."
+  ui_yesno "Продолжить чистку?" || return
+  $SUDO apt-get autoremove --purge -y
+  $SUDO apt-get clean
+  $SUDO journalctl --vacuum-time=7d 2>&1 | tail -n 3 >/dev/tty
+  if command -v docker >/dev/null 2>&1; then
+    if ui_yesno "docker system prune -af (удалит неиспользуемые образы/тома)?"; then
+      $SUDO docker system prune -af
+    fi
+  fi
+  after=$(df -h / | awk 'NR==2{print $4}')
+  ui_msg "Свободно на /:  было $before  →  стало $after"
+  pause
+}
+
+mt_netdata() {
+  if systemctl is-active --quiet netdata 2>/dev/null || command -v netdata >/dev/null 2>&1; then
+    ui_msg "netdata уже установлен. Веб-панель: http://<IP-сервера>:19999"
+    systemctl status netdata --no-pager 2>&1 | head -n 6 >/dev/tty
+    pause; return
+  fi
+  ui_yesno "Установить netdata (официальный установщик)?" || return
+  ui_msg "Ставлю netdata..."
+  fetch - https://get.netdata.cloud/kickstart.sh | $SUDO sh -s -- --dont-wait --disable-telemetry
+  if command -v ufw >/dev/null 2>&1 && ui_yesno "Открыть порт 19999 в UFW?"; then
+    $SUDO ufw allow 19999/tcp >/dev/null 2>&1
+  fi
+  ui_msg "Готово. Веб-панель: http://<IP-сервера>:19999"
+  pause
+}
+
+mt_sshlog() {
+  local pick ipp
+  while :; do
+    pick=$(ui_menu "SSH-логи и fail2ban" \
+      "Последние входы" \
+      "Неудачные попытки входа" \
+      "Забаненные IP (fail2ban)" \
+      "Разбанить IP (fail2ban)" \
+      "← Назад") || return
+    case "$pick" in
+      "Последние входы")
+        { echo "# last -n 20:"; last -n 20 2>/dev/null; } | page ;;
+      "Неудачные"*)
+        {
+          if [ -f /var/log/auth.log ]; then
+            $SUDO grep -a 'Failed password' /var/log/auth.log 2>/dev/null | tail -n 30
+          else
+            $SUDO journalctl _COMM=sshd 2>/dev/null | grep -a 'Failed password' | tail -n 30
+          fi
+          echo "(если пусто — неудачных попыток нет или логи в другом месте)"
+        } | page ;;
+      "Забаненные"*)
+        if command -v fail2ban-client >/dev/null 2>&1; then
+          $SUDO fail2ban-client status sshd 2>&1 | page
+        else
+          ui_msg "fail2ban не установлен (поставь в разделе «Твики»)."; pause
+        fi ;;
+      "Разбанить"*)
+        if command -v fail2ban-client >/dev/null 2>&1; then
+          ipp=$(ui_input "IP для разбана" ""); [ -n "$ipp" ] || continue
+          $SUDO fail2ban-client set sshd unbanip "$ipp" >/dev/tty 2>&1
+          ui_msg "Разбанен: $ipp"; pause
+        else
+          ui_msg "fail2ban не установлен."; pause
+        fi ;;
+      *) return ;;
+    esac
+  done
+}
+
 # ===========================================================================
 # ГЛАВНЫЙ ЦИКЛ
 # ===========================================================================
@@ -869,6 +1085,8 @@ main() {
       "Docker и сервисы" \
       "WireGuard VPN" \
       "Пользователи и доступ" \
+      "Сеть и веб" \
+      "Обслуживание и мониторинг" \
       "Справочник команд" \
       "Выход") || break
     case "$pick" in
@@ -879,6 +1097,8 @@ main() {
       "Docker и сервисы")             sec_docker ;;
       "WireGuard VPN")                sec_wireguard ;;
       "Пользователи и доступ")        sec_users ;;
+      "Сеть и веб")                   sec_netweb ;;
+      "Обслуживание и мониторинг")    sec_maint ;;
       "Справочник команд")            sec_commands ;;
       "Выход"|"") break ;;
     esac

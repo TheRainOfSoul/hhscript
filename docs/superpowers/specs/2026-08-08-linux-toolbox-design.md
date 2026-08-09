@@ -39,3 +39,11 @@
 - **Пользователи и доступ:** `adduser --disabled-password` + `passwd` (скрытый ввод с /dev/tty) + группа sudo; SSH-ключ в `authorized_keys`; смена порта SSH (сначала `ufw allow`, затем рестарт, предупреждение о локауте); бэкап `rsync`+`cron` (идемпотентно по маркеру).
 
 Тестирование: bash -n + shellcheck + навигация в plain через pty на WSL. Docker/WireGuard/systemd/root-действия — только на реальном VPS.
+
+## v1.2 — расширение (утверждено)
+Ещё 6 фич, всё на тех же `ui_*` / `/dev/tty` / `sudo` / `ensure_pkg`:
+- **Пользователи и доступ += Обратный SSH-туннель:** `autossh` в systemd-юните `hh-revssh-<name>` (`-M 0 -N -R remote:localhost:local`, автозапуск/реконнект, `User=$USER` — использует ключ пользователя к relay).
+- **Новый раздел «Сеть и веб»:** статический IP через `netplan` (форма IP/маска/шлюз/DNS → `/etc/netplan/99-hh.yaml`, применение `netplan try`/`apply`, предупреждение о разрыве сессии); `certbot --nginx` (домены+email, предусловия).
+- **Новый раздел «Обслуживание и мониторинг»:** чистка (`apt autoremove --purge`/`clean`, `journalctl --vacuum-time=7d`, опц. `docker system prune -af`) с отчётом свободного места; `netdata` через официальный kickstart (`--disable-telemetry`, опц. UFW 19999); просмотрщик SSH-логов и `fail2ban` (последние входы, неудачные попытки, забаненные, разбан).
+
+Тест v1.2: bash -n + shellcheck (чисто) + навигация по всем новым меню в plain через pty. netplan/certbot/autossh/netdata — VPS-only.
