@@ -826,8 +826,7 @@ usr_addkey() {
 
 usr_sshport() {
   local cur p d f
-  cur=$($SUDO grep -rhm1 '^Port ' /etc/ssh/sshd_config /etc/ssh/sshd_config.d/ 2>/dev/null | awk '{print $2; exit}')
-  [ -n "$cur" ] || cur=22
+  cur=$(ssh_port)
   p=$(ui_input "Новый порт SSH" "$cur"); [ -n "$p" ] || return
   case "$p" in ''|*[!0-9]*) ui_msg "Порт должен быть числом."; pause; return ;; esac
   ui_msg "ВНИМАНИЕ: открою порт $p в UFW, затем сменю порт и перезапущу SSH." \
@@ -913,10 +912,12 @@ sec_netweb() {
   while :; do
     pick=$(ui_menu "Сеть и веб" \
       "Статический IP (netplan)" \
+      "Фаервол UFW (правила и порты)" \
       "Certbot — HTTPS для nginx" \
       "← Назад") || return
     case "$pick" in
       "Статический IP"*) nw_static ;;
+      "Фаервол UFW"*)    nw_firewall ;;
       "Certbot"*)        nw_certbot ;;
       *) return ;;
     esac
@@ -983,6 +984,82 @@ nw_certbot() {
   pause
 }
 
+# текущий порт SSH (для защиты от самоблокировки в правилах UFW)
+ssh_port() {
+  local p
+  p=$($SUDO grep -rhm1 '^Port ' /etc/ssh/sshd_config /etc/ssh/sshd_config.d/ 2>/dev/null | awk '{print $2; exit}')
+  [ -n "$p" ] || p=22
+  printf '%s' "$p"
+}
+
+nw_firewall() {
+  ensure_pkg ufw || { pause; return; }
+  local pick p ip n cur sshp
+  sshp=$(ssh_port)
+  while :; do
+    pick=$(ui_menu "Фаервол UFW (SSH сейчас на порту $sshp)" \
+      "Статус и правила (с номерами)" \
+      "Открыть порт" \
+      "Удалить правило по номеру" \
+      "Разрешить всё с одного IP" \
+      "Включить фаервол" \
+      "Выключить фаервол" \
+      "Сброс к безопасному минимуму (только SSH)" \
+      "← Назад") || return
+    case "$pick" in
+      "Статус"*)
+        $SUDO ufw status numbered verbose 2>&1 | page
+        pause ;;
+      "Открыть порт")
+        p=$(ui_input "Порт (можно 8080/tcp, 5000:5010/udp)" "")
+        [ -n "$p" ] || continue
+        case "$p" in *[/:]*) : ;; *) p="${p}/tcp" ;; esac
+        $SUDO ufw allow "$p" >/dev/tty 2>&1
+        pause ;;
+      "Удалить правило"*)
+        $SUDO ufw status numbered >/dev/tty 2>&1
+        n=$(ui_input "Номер правила для удаления" "")
+        case "$n" in ''|*[!0-9]*) ui_msg "Номер должен быть числом."; pause; continue ;; esac
+        cur=$($SUDO ufw status numbered 2>/dev/null | awk -v n="[$n]" '$1==n')
+        [ -n "$cur" ] || { ui_msg "Нет правила с номером $n."; pause; continue; }
+        ui_msg "Правило: $cur"
+        if printf '%s' "$cur" | grep -qE "(^|[^0-9])${sshp}(/|[[:space:]])|OpenSSH|(^|[[:space:]])SSH"; then
+          ui_msg "ВНИМАНИЕ: это правило для SSH (порт $sshp) — можно потерять доступ к серверу."
+        fi
+        ui_yesno "Точно удалить?" || continue
+        $SUDO ufw --force delete "$n" >/dev/tty 2>&1
+        pause ;;
+      "Разрешить всё"*)
+        ip=$(ui_input "IP-адрес (напр. 192.168.1.10)" "")
+        [ -n "$ip" ] || continue
+        $SUDO ufw allow from "$ip" >/dev/tty 2>&1
+        pause ;;
+      "Включить фаервол")
+        if ! $SUDO ufw status 2>/dev/null | grep -qE "(^|[[:space:]])(${sshp}(/tcp)?|OpenSSH)([[:space:]]|$)"; then
+          ui_msg "SSH ($sshp) не разрешён в правилах — добавляю, иначе потеряешь доступ."
+          $SUDO ufw allow "${sshp}/tcp" >/dev/null 2>&1
+        fi
+        $SUDO ufw --force enable >/dev/tty 2>&1
+        pause ;;
+      "Выключить фаервол")
+        $SUDO ufw disable >/dev/tty 2>&1
+        pause ;;
+      "Сброс"*)
+        ui_msg "Сброс удалит ВСЕ правила и оставит только SSH ($sshp):" \
+               "входящие — запрещены, исходящие — разрешены."
+        ui_yesno "Продолжить?" || continue
+        $SUDO ufw --force reset >/dev/null 2>&1
+        $SUDO ufw default deny incoming >/dev/null 2>&1
+        $SUDO ufw default allow outgoing >/dev/null 2>&1
+        $SUDO ufw allow "${sshp}/tcp" >/dev/null 2>&1
+        $SUDO ufw --force enable >/dev/null 2>&1
+        $SUDO ufw status verbose >/dev/tty 2>&1
+        pause ;;
+      *) return ;;
+    esac
+  done
+}
+
 # ===========================================================================
 # ОБСЛУЖИВАНИЕ И МОНИТОРИНГ
 # ===========================================================================
@@ -994,11 +1071,15 @@ sec_maint() {
       "Чистка системы (освободить место)" \
       "netdata — веб-мониторинг" \
       "SSH-логи и fail2ban" \
+      "Задачи по расписанию (cron)" \
+      "Журналы (journalctl, dmesg)" \
       "← Назад") || return
     case "$pick" in
       "Чистка"*)   mt_clean ;;
       "netdata"*)  mt_netdata ;;
       "SSH-логи"*) mt_sshlog ;;
+      "Задачи по расписанию"*) mt_cron ;;
+      "Журналы"*)  mt_logs ;;
       *) return ;;
     esac
   done
@@ -1079,6 +1160,547 @@ mt_sshlog() {
   done
 }
 
+mt_cron() {
+  local pick cmd sched line n list
+  while :; do
+    pick=$(ui_menu "Задачи по расписанию (cron)" \
+      "Показать задачи" \
+      "Добавить задачу" \
+      "Удалить задачу" \
+      "← Назад") || return
+    case "$pick" in
+      "Показать"*)
+        {
+          printf '\n# crontab root\n'
+          $SUDO crontab -l 2>/dev/null || printf '  (пусто)\n'
+          printf '\n# crontab %s\n' "$USER"
+          crontab -l 2>/dev/null || printf '  (пусто)\n'
+          printf '\n# системные задания (/etc/cron.d)\n'
+          find /etc/cron.d -maxdepth 1 -type f -printf '  %f\n' 2>/dev/null
+        } 2>&1 | page
+        pause ;;
+      "Добавить"*)
+        cmd=$(ui_input "Команда (указывай полный путь — у cron бедный PATH)" "")
+        [ -n "$cmd" ] || continue
+        sched=$(ui_menu "Когда запускать?" \
+          "Каждые 5 минут" \
+          "Каждый час" \
+          "Каждый день в 03:00" \
+          "Каждую неделю (вс 03:00)" \
+          "Своя строка cron" \
+          "← Отмена") || continue
+        case "$sched" in
+          "Каждые 5"*)      line="*/5 * * * *" ;;
+          "Каждый час")     line="0 * * * *" ;;
+          "Каждый день"*)   line="0 3 * * *" ;;
+          "Каждую неделю"*) line="0 3 * * 0" ;;
+          "Своя строка"*)   line=$(ui_input "Расписание (мин час день месяц день_недели)" "0 3 * * *") ;;
+          *) continue ;;
+        esac
+        [ -n "$line" ] || continue
+        { $SUDO crontab -l 2>/dev/null; printf '%s %s\n' "$line" "$cmd"; } | $SUDO crontab -
+        ui_msg "Добавлено в crontab root:" "$line $cmd"
+        pause ;;
+      "Удалить"*)
+        list=$($SUDO crontab -l 2>/dev/null | grep -vE '^[[:space:]]*($|#)')
+        [ -n "$list" ] || { ui_msg "У root нет задач."; pause; continue; }
+        { printf '\n'; printf '%s\n' "$list" | nl -w2 -s') '; } >/dev/tty
+        n=$(ui_input "Номер задачи для удаления" "")
+        case "$n" in ''|*[!0-9]*) ui_msg "Номер должен быть числом."; pause; continue ;; esac
+        cmd=$(printf '%s\n' "$list" | sed -n "${n}p")
+        [ -n "$cmd" ] || { ui_msg "Нет задачи №$n."; pause; continue; }
+        ui_msg "Удаляю: $cmd"
+        ui_yesno "Точно?" || continue
+        $SUDO crontab -l 2>/dev/null | grep -vxF "$cmd" | $SUDO crontab -
+        ui_msg "Удалено."
+        pause ;;
+      *) return ;;
+    esac
+  done
+}
+
+mt_logs() {
+  local pick u n q
+  while :; do
+    pick=$(ui_menu "Журналы" \
+      "Последние ошибки системы" \
+      "Лог службы" \
+      "Сообщения ядра (dmesg)" \
+      "Поиск по журналу" \
+      "Размер журналов и чистка" \
+      "← Назад") || return
+    case "$pick" in
+      "Последние ошибки"*)
+        $SUDO journalctl -p err -n 100 --no-pager 2>&1 | page
+        pause ;;
+      "Лог службы")
+        u=$(svc_pick) || continue
+        n=$(ui_input "Сколько последних строк" "200")
+        $SUDO journalctl -u "$u" -n "${n:-200}" --no-pager 2>&1 | page
+        pause ;;
+      "Сообщения ядра"*)
+        $SUDO dmesg -T 2>&1 | tail -n 200 | page
+        pause ;;
+      "Поиск по журналу")
+        q=$(ui_input "Что искать (например: error, sshd, timeout)" "")
+        [ -n "$q" ] || continue
+        $SUDO journalctl --no-pager -n 5000 2>/dev/null | grep -iF -- "$q" | tail -n 200 | page
+        pause ;;
+      "Размер журналов"*)
+        $SUDO journalctl --disk-usage >/dev/tty 2>&1
+        if ui_yesno "Ужать журналы до 200 МБ?"; then
+          $SUDO journalctl --vacuum-size=200M 2>&1 | tail -n 3 | page
+        fi
+        pause ;;
+      *) return ;;
+    esac
+  done
+}
+
+# ===========================================================================
+# СЛУЖБЫ И ПРОЦЕССЫ
+# ===========================================================================
+
+sec_services() {
+  local pick
+  while :; do
+    pick=$(ui_menu "Службы и процессы" \
+      "Список служб" \
+      "Управление службой" \
+      "Лог службы" \
+      "Кто занял порт" \
+      "Убить процесс" \
+      "Топ процессов" \
+      "← Назад") || return
+    case "$pick" in
+      "Список служб")     svc_list ;;
+      "Управление службой") svc_manage ;;
+      "Лог службы")       svc_log ;;
+      "Кто занял порт")   svc_port ;;
+      "Убить процесс")    svc_kill ;;
+      "Топ процессов")    svc_top ;;
+      *) return ;;
+    esac
+  done
+}
+
+# выбрать systemd-юнит: имя службы в stdout, 1 — если отменили
+svc_pick() {
+  local f units=() u sel
+  f=$(ui_input "Часть имени службы (пусто — показать работающие)" "")
+  if [ -n "$f" ]; then
+    while IFS= read -r u; do
+      [ -n "$u" ] && units+=("$u")
+    done < <(systemctl list-units --type=service --all --no-legend --plain --no-pager 2>/dev/null \
+             | awk '{print $1}' | grep -iF -- "$f" | head -n 30)
+  else
+    while IFS= read -r u; do
+      [ -n "$u" ] && units+=("$u")
+    done < <(systemctl list-units --type=service --state=running --no-legend --plain --no-pager 2>/dev/null \
+             | awk '{print $1}' | head -n 30)
+  fi
+  if [ "${#units[@]}" -eq 0 ]; then
+    { ui_msg "Служб не найдено."; pause; } >/dev/tty
+    return 1
+  fi
+  sel=$(ui_menu "Выбери службу" "${units[@]}" "← Назад") || return 1
+  if [ -z "$sel" ] || [ "$sel" = "← Назад" ]; then return 1; fi
+  printf '%s' "$sel"
+}
+
+svc_list() {
+  local what f
+  what=$(ui_menu "Какие службы показать?" \
+    "Работающие" \
+    "Упавшие (failed)" \
+    "С автозапуском" \
+    "Поиск по имени" \
+    "← Назад") || return
+  case "$what" in
+    "Работающие")
+      $SUDO systemctl list-units --type=service --state=running --no-pager 2>&1 | page ;;
+    "Упавшие"*)
+      $SUDO systemctl list-units --type=service --state=failed --no-pager 2>&1 | page ;;
+    "С автозапуском")
+      $SUDO systemctl list-unit-files --type=service --state=enabled --no-pager 2>&1 | page ;;
+    "Поиск по имени")
+      f=$(ui_input "Часть имени" ""); [ -n "$f" ] || return
+      $SUDO systemctl list-units --type=service --all --no-pager 2>&1 | grep -iF -- "$f" | page ;;
+    *) return ;;
+  esac
+  pause
+}
+
+svc_manage() {
+  local u act
+  u=$(svc_pick) || return
+  while :; do
+    { printf '\n'; $SUDO systemctl --no-pager --full status "$u" 2>&1 | head -n 12; } >/dev/tty
+    act=$(ui_menu "Служба $u" \
+      "Перезапустить" \
+      "Остановить" \
+      "Запустить" \
+      "Автозапуск: включить" \
+      "Автозапуск: выключить" \
+      "Показать лог" \
+      "← Назад") || return
+    case "$act" in
+      "Перезапустить") $SUDO systemctl restart "$u" >/dev/tty 2>&1 ;;
+      "Остановить")
+        case "$u" in
+          ssh*) ui_yesno "Это SSH — остановка оборвёт удалённый доступ. Точно?" || continue ;;
+        esac
+        $SUDO systemctl stop "$u" >/dev/tty 2>&1 ;;
+      "Запустить")     $SUDO systemctl start "$u" >/dev/tty 2>&1 ;;
+      "Автозапуск: включить")  $SUDO systemctl enable "$u" >/dev/tty 2>&1 ;;
+      "Автозапуск: выключить") $SUDO systemctl disable "$u" >/dev/tty 2>&1 ;;
+      "Показать лог")  $SUDO journalctl -u "$u" -n 200 --no-pager 2>&1 | page; pause ;;
+      *) return ;;
+    esac
+  done
+}
+
+svc_log() {
+  local u n
+  u=$(svc_pick) || return
+  n=$(ui_input "Сколько последних строк" "200")
+  $SUDO journalctl -u "$u" -n "${n:-200}" --no-pager 2>&1 | page
+  pause
+}
+
+svc_port() {
+  local p
+  p=$(ui_input "Порт (пусто — показать все слушающие)" "")
+  {
+    if [ -n "$p" ]; then
+      printf '# сокеты на порту %s\n' "$p"
+      $SUDO ss -tulnp 2>/dev/null | awk -v p=":$p" 'NR==1 || index($5, p)'
+      if command -v lsof >/dev/null 2>&1; then
+        printf '\n# процессы (lsof)\n'
+        $SUDO lsof -i ":$p" -n -P 2>/dev/null
+      else
+        printf '\n(поставь пакет lsof — покажу процессы подробнее)\n'
+      fi
+    else
+      printf '# все слушающие сокеты\n'
+      $SUDO ss -tulnp 2>/dev/null
+    fi
+  } 2>&1 | page
+  pause
+}
+
+svc_kill() {
+  local q pid list name
+  q=$(ui_input "Имя процесса или PID" ""); [ -n "$q" ] || return
+  if [[ $q =~ ^[0-9]+$ ]]; then
+    pid=$q
+  else
+    list=$(pgrep -a -f -- "$q" 2>/dev/null | head -n 20)
+    [ -n "$list" ] || { ui_msg "Не найдено: $q"; pause; return; }
+    { printf '\n%s\n' "$list"; } >/dev/tty
+    pid=$(ui_input "PID из списка выше" "$(printf '%s' "$list" | awk 'NR==1{print $1}')")
+  fi
+  case "$pid" in ''|*[!0-9]*) ui_msg "PID должен быть числом."; pause; return ;; esac
+  if [ "$pid" = 1 ]; then ui_msg "PID 1 (init) убивать нельзя."; pause; return; fi
+  name=$(ps -p "$pid" -o comm= 2>/dev/null)
+  [ -n "$name" ] || { ui_msg "Нет процесса с PID $pid."; pause; return; }
+  case "$name" in
+    sshd|systemd) ui_msg "ВНИМАНИЕ: $name — можно потерять доступ к серверу." ;;
+  esac
+  ui_yesno "Убить $pid ($name)?" || return
+  $SUDO kill "$pid" 2>/dev/null
+  sleep 1
+  if ps -p "$pid" >/dev/null 2>&1; then
+    if ui_yesno "Не завершился. Добить kill -9?"; then $SUDO kill -9 "$pid" 2>/dev/null; fi
+  fi
+  ui_msg "Готово."
+  pause
+}
+
+svc_top() {
+  local by
+  by=$(ui_menu "Топ процессов" "По CPU" "По памяти" "← Назад") || return
+  case "$by" in
+    "По CPU")    ps aux --sort=-%cpu 2>/dev/null | head -n 25 | page ;;
+    "По памяти") ps aux --sort=-%mem 2>/dev/null | head -n 25 | page ;;
+    *) return ;;
+  esac
+  pause
+}
+
+# ===========================================================================
+# ДИСКИ И ХРАНИЛИЩЕ
+# ===========================================================================
+
+sec_disks() {
+  local pick
+  while :; do
+    pick=$(ui_menu "Диски и хранилище" \
+      "Обзор дисков и разделов" \
+      "SMART — здоровье дисков" \
+      "Смонтировать раздел (+ fstab)" \
+      "Отмонтировать" \
+      "Разметить и отформатировать диск" \
+      "Чем занято место" \
+      "Samba-шара (доступ из Windows)" \
+      "NFS-экспорт (доступ из Linux)" \
+      "← Назад") || return
+    case "$pick" in
+      "Обзор дисков"*)  dsk_overview ;;
+      "SMART"*)         dsk_smart ;;
+      "Смонтировать"*)  dsk_mount ;;
+      "Отмонтировать")  dsk_umount ;;
+      "Разметить"*)     dsk_format ;;
+      "Чем занято"*)    dsk_space ;;
+      "Samba"*)         dsk_samba ;;
+      "NFS"*)           dsk_nfs ;;
+      *) return ;;
+    esac
+  done
+}
+
+dsk_overview() {
+  {
+    printf '\n# Диски и разделы\n'
+    lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT,MODEL 2>/dev/null
+    printf '\n# Занятость файловых систем\n'
+    df -hT -x tmpfs -x devtmpfs 2>/dev/null
+    printf '\n# Inodes (кончатся — «нет места» при свободных гигабайтах)\n'
+    df -i -x tmpfs -x devtmpfs 2>/dev/null
+    printf '\n# UUID разделов\n'
+    $SUDO blkid 2>/dev/null
+  } 2>&1 | page
+  pause
+}
+
+dsk_smart() {
+  ensure_pkg smartmontools || { pause; return; }
+  local list=() line sel dev act
+  while IFS= read -r line; do
+    [ -n "$line" ] && list+=("$line")
+  done < <(lsblk -dn -e 7,11 -o PATH,SIZE,MODEL 2>/dev/null)
+  [ "${#list[@]}" -gt 0 ] || { ui_msg "Дисков не найдено."; pause; return; }
+  sel=$(ui_menu "Выбери диск" "${list[@]}" "← Назад") || return
+  if [ -z "$sel" ] || [ "$sel" = "← Назад" ]; then return; fi
+  dev=${sel%% *}
+  act=$(ui_menu "SMART: $dev" \
+    "Здоровье (кратко)" \
+    "Все атрибуты" \
+    "Запустить короткий тест (~2 минуты)" \
+    "Результат последнего теста" \
+    "← Назад") || return
+  case "$act" in
+    "Здоровье"*)
+      {
+        $SUDO smartctl -H -i "$dev"
+        printf '\n# Ключевые атрибуты (плохо, если ненулевые: Reallocated, Pending, Uncorrectable)\n'
+        $SUDO smartctl -A "$dev" 2>/dev/null | grep -Ei 'reallocated|pending|uncorrect|power_on|temperature'
+      } 2>&1 | page ;;
+    "Все атрибуты")
+      $SUDO smartctl -A "$dev" 2>&1 | page ;;
+    "Запустить короткий"*)
+      $SUDO smartctl -t short "$dev" >/dev/tty 2>&1
+      ui_msg "Тест запущен в фоне. Через пару минут смотри «Результат последнего теста»." ;;
+    "Результат"*)
+      $SUDO smartctl -l selftest "$dev" 2>&1 | page ;;
+    *) return ;;
+  esac
+  pause
+}
+
+dsk_mount() {
+  local list=() line sel dev uuid fstype mp
+  while IFS= read -r line; do
+    [ -n "$line" ] && list+=("$line")
+  done < <(lsblk -pn -e 7,11 -o PATH,SIZE,FSTYPE,MOUNTPOINT 2>/dev/null | awk 'NF==3')
+  [ "${#list[@]}" -gt 0 ] || { ui_msg "Нет несмонтированных разделов с файловой системой."; pause; return; }
+  sel=$(ui_menu "Какой раздел смонтировать?" "${list[@]}" "← Назад") || return
+  if [ -z "$sel" ] || [ "$sel" = "← Назад" ]; then return; fi
+  dev=${sel%% *}
+  fstype=$(lsblk -dn -o FSTYPE "$dev" 2>/dev/null)
+  uuid=$(lsblk -dn -o UUID "$dev" 2>/dev/null)
+  mp=$(ui_input "Точка монтирования" "/mnt/${dev##*/}")
+  [ -n "$mp" ] || return
+  $SUDO mkdir -p "$mp"
+  if ! $SUDO mount "$dev" "$mp" >/dev/tty 2>&1; then
+    ui_msg "Не смонтировалось (файловая система: ${fstype:-неизвестна})."
+    pause; return
+  fi
+  ui_msg "Смонтировано: $dev -> $mp"
+  ui_yesno "Прописать в /etc/fstab (монтировать при загрузке)?" || { pause; return; }
+  $SUDO cp -a /etc/fstab /etc/fstab.hh.bak
+  if [ -n "$uuid" ]; then
+    printf 'UUID=%s %s %s defaults,nofail 0 2\n' "$uuid" "$mp" "${fstype:-auto}" | $SUDO tee -a /etc/fstab >/dev/null
+  else
+    printf '%s %s %s defaults,nofail 0 2\n' "$dev" "$mp" "${fstype:-auto}" | $SUDO tee -a /etc/fstab >/dev/null
+  fi
+  if $SUDO mount -a >/dev/tty 2>&1; then
+    ui_msg "Записано в /etc/fstab с флагом nofail — сервер загрузится, даже если диск отвалится." \
+           "Бэкап прежнего файла: /etc/fstab.hh.bak"
+  else
+    ui_msg "Ошибка в /etc/fstab — откатываю из бэкапа, чтобы сервер не завис при загрузке."
+    $SUDO cp -a /etc/fstab.hh.bak /etc/fstab
+  fi
+  pause
+}
+
+dsk_umount() {
+  local list=() line sel mp
+  while IFS= read -r line; do
+    [ -n "$line" ] && list+=("$line")
+  done < <(lsblk -pn -e 7,11 -o PATH,SIZE,FSTYPE,MOUNTPOINT 2>/dev/null \
+           | awk 'NF==4 && $4 != "/" && $4 != "[SWAP]" && $4 !~ /^\/boot/')
+  [ "${#list[@]}" -gt 0 ] || { ui_msg "Нечего отмонтировать (системные разделы не трогаю)."; pause; return; }
+  sel=$(ui_menu "Что отмонтировать?" "${list[@]}" "← Назад") || return
+  if [ -z "$sel" ] || [ "$sel" = "← Назад" ]; then return; fi
+  mp=$(printf '%s' "$sel" | awk '{print $4}')
+  if $SUDO umount "$mp" 2>/dev/tty; then
+    ui_msg "Отмонтировано: $mp" "Если раздел прописан в /etc/fstab — при перезагрузке смонтируется снова."
+  else
+    ui_msg "Раздел занят. Кто его держит:"
+    $SUDO fuser -vm "$mp" >/dev/tty 2>&1 || $SUDO lsof +D "$mp" 2>/dev/null | head -n 10 >/dev/tty
+  fi
+  pause
+}
+
+dsk_format() {
+  ensure_pkg parted || { pause; return; }
+  local sysdisk root dev conf label part
+  root=$(findmnt -no SOURCE / 2>/dev/null)
+  sysdisk=$(lsblk -no PKNAME "$root" 2>/dev/null | head -n 1)
+  {
+    printf '\n# Диски (системный: %s)\n' "${sysdisk:-неизвестен}"
+    lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT,MODEL 2>/dev/null
+  } >/dev/tty
+  ui_msg "ОПАСНО: диск будет размечен заново (GPT + один раздел ext4)." \
+         "ВСЕ ДАННЫЕ НА НЁМ БУДУТ УНИЧТОЖЕНЫ БЕЗВОЗВРАТНО."
+  dev=$(ui_input "Устройство целиком (например /dev/sdb)" "")
+  [ -n "$dev" ] || return
+  [ -b "$dev" ] || { ui_msg "$dev — не блочное устройство."; pause; return; }
+  if [ "$(lsblk -dn -o TYPE "$dev" 2>/dev/null)" != "disk" ]; then
+    ui_msg "Нужен диск целиком, а не раздел."; pause; return
+  fi
+  if [ -n "$sysdisk" ] && [ "$dev" = "/dev/$sysdisk" ]; then
+    ui_msg "Это системный диск ($dev) — отказываюсь форматировать."; pause; return
+  fi
+  if lsblk -n -o MOUNTPOINT "$dev" 2>/dev/null | grep -q '[^[:space:]]'; then
+    ui_msg "На $dev есть смонтированные разделы — сначала отмонтируй их."; pause; return
+  fi
+  conf=$(ui_input "Для подтверждения впиши ТОЧНО: $dev" "")
+  [ "$conf" = "$dev" ] || { ui_msg "Не совпало — отмена."; pause; return; }
+  label=$(ui_input "Метка тома (латиницей)" "data")
+  ui_msg "Размечаю $dev ..."
+  $SUDO wipefs -a "$dev" >/dev/null 2>&1
+  $SUDO parted -s "$dev" mklabel gpt mkpart primary ext4 1MiB 100% >/dev/tty 2>&1
+  $SUDO partprobe "$dev" 2>/dev/null
+  sleep 2
+  part=$(lsblk -pn -o PATH,TYPE "$dev" 2>/dev/null | awk '$2=="part"{print $1; exit}')
+  [ -n "$part" ] || { ui_msg "Раздел не появился — проверь вручную (lsblk)."; pause; return; }
+  $SUDO mkfs.ext4 -F -L "$label" "$part" >/dev/tty 2>&1
+  ui_msg "Готово: $part (ext4, метка $label)." \
+         "Теперь смонтируй его пунктом «Смонтировать раздел»."
+  pause
+}
+
+dsk_space() {
+  local d
+  d=$(ui_input "Каталог для анализа" "/")
+  [ -n "$d" ] || return
+  if command -v ncdu >/dev/null 2>&1 && ui_yesno "Открыть интерактивный ncdu по $d?"; then
+    $SUDO ncdu "$d" </dev/tty >/dev/tty 2>&1
+    pause; return
+  fi
+  {
+    printf '\n# Топ-20 каталогов в %s\n' "$d"
+    $SUDO du -h --max-depth=1 "$d" 2>/dev/null | sort -hr | head -n 20
+    printf '\n# Топ-10 крупных файлов (без учёта других ФС)\n'
+    $SUDO find "$d" -xdev -type f -printf '%s %p\n' 2>/dev/null \
+      | sort -nr | head -n 10 \
+      | awk '{sz=$1; $1=""; sub(/^ /,""); printf "%8.1f MB  %s\n", sz/1048576, $0}'
+  } 2>&1 | page
+  pause
+}
+
+dsk_samba() {
+  ensure_pkg samba || { pause; return; }
+  local dir name mode user host
+  dir=$(ui_input "Какую папку раздать" "/srv/share"); [ -n "$dir" ] || return
+  name=$(ui_input "Имя шары (так её увидит Windows)" "$(basename "$dir")"); [ -n "$name" ] || return
+  mode=$(ui_menu "Доступ" \
+    "По логину и паролю (чтение и запись)" \
+    "Гостевой, только чтение" \
+    "← Отмена") || return
+  $SUDO mkdir -p "$dir"
+  case "$mode" in
+    "По логину"*)
+      user=$(ui_input "Пользователь (должен существовать в системе)" "$USER"); [ -n "$user" ] || return
+      if ! id "$user" >/dev/null 2>&1; then
+        ui_msg "Нет системного пользователя $user — создай его в разделе «Пользователи и доступ»."
+        pause; return
+      fi
+      $SUDO chown -R "$user:$user" "$dir"
+      $SUDO chmod 2770 "$dir"
+      $SUDO tee -a /etc/samba/smb.conf >/dev/null <<CONF
+
+[${name}]
+   path = ${dir}
+   browseable = yes
+   read only = no
+   valid users = ${user}
+   create mask = 0664
+   directory mask = 0775
+CONF
+      ui_msg "Задай пароль Samba для $user (он отдельный от системного):"
+      $SUDO smbpasswd -a "$user" </dev/tty
+      $SUDO smbpasswd -e "$user" >/dev/null 2>&1
+      ;;
+    "Гостевой"*)
+      $SUDO chmod 755 "$dir"
+      $SUDO tee -a /etc/samba/smb.conf >/dev/null <<CONF
+
+[${name}]
+   path = ${dir}
+   browseable = yes
+   read only = yes
+   guest ok = yes
+CONF
+      ;;
+    *) return ;;
+  esac
+  if ! $SUDO testparm -s >/dev/null 2>&1; then
+    ui_msg "ВНИМАНИЕ: testparm ругается на /etc/samba/smb.conf — проверь конфиг."
+  fi
+  $SUDO systemctl restart smbd 2>/dev/null || $SUDO systemctl restart samba 2>/dev/null
+  command -v ufw >/dev/null 2>&1 && $SUDO ufw allow samba >/dev/null 2>&1
+  host=$(hostname -I 2>/dev/null | awk '{print $1}')
+  ui_msg "Шара готова. В проводнике Windows:  \\\\${host:-IP-сервера}\\${name}" "Каталог: $dir"
+  pause
+}
+
+dsk_nfs() {
+  ensure_pkg nfs-kernel-server || { pause; return; }
+  local dir net mode opts host defnet
+  dir=$(ui_input "Какую папку экспортировать" "/srv/nfs"); [ -n "$dir" ] || return
+  # ponytail: подсеть угадываю заменой последнего октета на 0 — верно для /24, для других масок правь руками
+  defnet=$(default_cidr | sed 's/\.[0-9]\{1,3\}\//.0\//')
+  net=$(ui_input "Кому разрешить (IP или подсеть)" "$defnet"); [ -n "$net" ] || return
+  mode=$(ui_menu "Доступ" "Чтение и запись" "Только чтение" "← Отмена") || return
+  case "$mode" in
+    "Чтение и запись") opts="rw,sync,no_subtree_check" ;;
+    "Только чтение")   opts="ro,sync,no_subtree_check" ;;
+    *) return ;;
+  esac
+  $SUDO mkdir -p "$dir"
+  printf '%s %s(%s)\n' "$dir" "$net" "$opts" | $SUDO tee -a /etc/exports >/dev/null
+  $SUDO exportfs -ra >/dev/tty 2>&1
+  $SUDO systemctl enable --now nfs-kernel-server >/dev/null 2>&1
+  command -v ufw >/dev/null 2>&1 && $SUDO ufw allow nfs >/dev/null 2>&1
+  $SUDO exportfs -v 2>&1 | page
+  host=$(hostname -I 2>/dev/null | awk '{print $1}')
+  ui_msg "Экспорт готов. На клиенте:" "sudo mount -t nfs ${host:-IP-сервера}:$dir /mnt/точка"
+  pause
+}
+
 # ===========================================================================
 # ГЛАВНЫЙ ЦИКЛ
 # ===========================================================================
@@ -1095,6 +1717,8 @@ main() {
       "Информация о системе и сеть" \
       "Установка программ (галочки)" \
       "Твики и настройка сервера" \
+      "Службы и процессы" \
+      "Диски и хранилище" \
       "Диагностика сети" \
       "Docker и сервисы" \
       "WireGuard VPN" \
@@ -1107,6 +1731,8 @@ main() {
       "Информация о системе и сеть") sec_sysinfo ;;
       "Установка программ (галочки)") sec_install ;;
       "Твики и настройка сервера")    sec_tweaks ;;
+      "Службы и процессы")            sec_services ;;
+      "Диски и хранилище")            sec_disks ;;
       "Диагностика сети")             sec_netdiag ;;
       "Docker и сервисы")             sec_docker ;;
       "WireGuard VPN")                sec_wireguard ;;
