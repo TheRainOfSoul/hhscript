@@ -1333,23 +1333,46 @@ function Invoke-Triage {
     # тот загрузчик был честно подписан Notepad++, потому что это и был
     # переименованный GUP.exe.
     Write-Host "   [1/5] Процессы из нестандартных папок" -ForegroundColor Cyan
+    $files = New-Object System.Collections.ArrayList
     Get-Process | Where-Object { $_.Path -and $_.Path -notmatch $trusted -and $_.Path -notmatch $noise } |
         Sort-Object Path -Unique | ForEach-Object {
             $sig  = Get-AuthenticodeSignature -FilePath $_.Path -ErrorAction SilentlyContinue
+            $item = Get-Item $_.Path -ErrorAction SilentlyContinue
             $note = ''
             # ponytail: грубое сравнение по первому слову компании. Работает
             # только здесь, в пользовательских папках; в Program Files оно шумит
             # (Obsidian подписан Dynalist, Parsec — Unity Technologies) и потому
             # туда не заходит. Начнёт шуметь у клиента — вести список исключений.
-            $co = (Get-Item $_.Path -ErrorAction SilentlyContinue).VersionInfo.CompanyName
+            $co = $item.VersionInfo.CompanyName
             if ($sig.Status -eq 'Valid' -and $co) {
                 $word = ($co -split '[ ,\.]')[0]
                 if ($word.Length -gt 3 -and $sig.SignerCertificate.Subject -notmatch [regex]::Escape($word)) {
                     $note = "  ← подписал не тот, кто в метаданных ($co)"
                 }
             }
+            $n = $files.Add($_.Path) + 1
             $color = if ($sig.Status -eq 'Valid' -and -not $note) { 'Gray' } else { 'Red' }
-            Write-Host ("       [{0}] {1}{2}" -f $sig.Status, $_.Path, $note) -ForegroundColor $color
+            Write-Host ("       {0,2}) [{1}] {2}{3}" -f $n, $sig.Status, $_.Path, $note) -ForegroundColor $color
+
+            # Три признака, по которым решение принимается без антивируса.
+            # Zone.Identifier — альтернативный поток NTFS: браузер пишет туда
+            # адрес, откуда файл скачан. Если там сайт, которого никто не
+            # открывал, разговор окончен. Дата создания говорит не меньше:
+            # оба вредоноса 16.08.2026 появились за три дня до разбора.
+            # CN режем регуляркой, а не split по запятой: у части издателей имя
+            # само содержит запятую и берётся в кавычки — CN="Anthropic, PBC".
+            # Наивный split оставлял в отчёте обрубок «"Anthropic».
+            $cn = 'нет подписи'
+            if ($sig.SignerCertificate) {
+                $m = [regex]::Match($sig.SignerCertificate.Subject, 'CN=(?:"(?<q>[^"]*)"|(?<p>[^,]*))')
+                $cn = if ($m.Groups['q'].Success) { $m.Groups['q'].Value } else { $m.Groups['p'].Value }
+            }
+            $zone = (Get-Content $_.Path -Stream Zone.Identifier -ErrorAction SilentlyContinue |
+                     Select-String '^(HostUrl|ReferrerUrl)=' | Select-Object -First 1) -replace '^\w+=', ''
+            # Ссылки со свежими подписями (Canva, S3 и подобные) бывают по 400
+            # символов и разносят вёрстку отчёта — режем, домена достаточно.
+            $src = if (-not $zone) { '—' } elseif ($zone.Length -gt 90) { $zone.Substring(0, 90) + '…' } else { $zone }
+            Write-Host ("           создан {0:dd.MM.yyyy} · {1} · источник: {2}" -f $item.CreationTime, $cn, $src) -ForegroundColor DarkGray
             $hits++
         }
 
@@ -1423,12 +1446,37 @@ function Invoke-Triage {
     Write-Host ""
     if ($hits -eq 0) {
         Write-Host "   Несостыковок не найдено." -ForegroundColor Green
-    } else {
-        Write-Host "   Отмечено пунктов: $hits" -ForegroundColor Yellow
-        Write-Host "   Это не приговор — часть окажется своим софтом. Проверять" -ForegroundColor Gray
-        Write-Host "   вручную: путь, подпись, дату создания файла." -ForegroundColor Gray
+        Write-Log 'Триаж: чисто'
+        return
     }
+    Write-Host "   Отмечено пунктов: $hits" -ForegroundColor Yellow
+    Write-Host "   Это не приговор — часть окажется своим софтом." -ForegroundColor Gray
     Write-Log "Триаж: отмечено пунктов $hits"
+
+    # Окончательный ответ «вирус или нет» даёт VirusTotal: 70+ движков по хешу,
+    # ключ API не нужен, файл никуда не загружается — уходит только SHA256.
+    # Своего вердикта скрипт по-прежнему не выносит, но доводит до того, кто
+    # его вынесет, за один шаг вместо ручного копирования путей.
+    if ($files.Count -eq 0) { return }
+    Write-Host ""
+    Write-Host "   Проверить файл из списка [1/5] на VirusTotal — введи номер." -ForegroundColor Cyan
+    Write-Host "   Можно несколько через запятую. Уйдёт только хеш, не файл." -ForegroundColor Gray
+    $ans = (Read-Host "   Номера (пусто — пропустить)").Trim()
+    if (-not $ans) { return }
+    foreach ($num in ($ans -split '[,\s]+' | Where-Object { $_ -match '^\d+$' })) {
+        $i = [int]$num - 1
+        if ($i -lt 0 -or $i -ge $files.Count) { Write-Host "   Нет строки $num." -ForegroundColor Yellow; continue }
+        $path = $files[$i]
+        try {
+            $sha = (Get-FileHash -Path $path -Algorithm SHA256 -ErrorAction Stop).Hash
+        } catch {
+            Write-Host "   Не прочитать $path — $($_.Exception.Message)" -ForegroundColor Yellow; continue
+        }
+        Write-Host "   $path" -ForegroundColor White
+        Write-Host "   SHA256: $sha" -ForegroundColor Gray
+        Write-Log "Триаж: VirusTotal $sha ($path)"
+        Start-Process "https://www.virustotal.com/gui/file/$sha"
+    }
 }
 
 function Show-SecurityScan {
