@@ -1350,10 +1350,6 @@ function Invoke-Triage {
                     $note = "  ← подписал не тот, кто в метаданных ($co)"
                 }
             }
-            $n = $files.Add($_.Path) + 1
-            $color = if ($sig.Status -eq 'Valid' -and -not $note) { 'Gray' } else { 'Red' }
-            Write-Host ("       {0,2}) [{1}] {2}{3}" -f $n, $sig.Status, $_.Path, $note) -ForegroundColor $color
-
             # Три признака, по которым решение принимается без антивируса.
             # Zone.Identifier — альтернативный поток NTFS: браузер пишет туда
             # адрес, откуда файл скачан. Если там сайт, которого никто не
@@ -1370,8 +1366,15 @@ function Invoke-Triage {
             $zone = (Get-Content $_.Path -Stream Zone.Identifier -ErrorAction SilentlyContinue |
                      Select-String '^(HostUrl|ReferrerUrl)=' | Select-Object -First 1) -replace '^\w+=', ''
             # Ссылки со свежими подписями (Canva, S3 и подобные) бывают по 400
-            # символов и разносят вёрстку отчёта — режем, домена достаточно.
+            # символов: в консоли режем, в HTML-отчёт кладём целиком.
             $src = if (-not $zone) { '—' } elseif ($zone.Length -gt 90) { $zone.Substring(0, 90) + '…' } else { $zone }
+
+            $n = $files.Add([PSCustomObject]@{
+                Path = $_.Path; Status = [string]$sig.Status; Signer = $cn
+                Created = $item.CreationTime; Source = $zone; Note = $note
+            }) + 1
+            $color = if ($sig.Status -eq 'Valid' -and -not $note) { 'Gray' } else { 'Red' }
+            Write-Host ("       {0,2}) [{1}] {2}{3}" -f $n, $sig.Status, $_.Path, $note) -ForegroundColor $color
             Write-Host ("           создан {0:dd.MM.yyyy} · {1} · источник: {2}" -f $item.CreationTime, $cn, $src) -ForegroundColor DarkGray
             $hits++
         }
@@ -1455,27 +1458,50 @@ function Invoke-Triage {
 
     # Окончательный ответ «вирус или нет» даёт VirusTotal: 70+ движков по хешу,
     # ключ API не нужен, файл никуда не загружается — уходит только SHA256.
-    # Своего вердикта скрипт по-прежнему не выносит, но доводит до того, кто
-    # его вынесет, за один шаг вместо ручного копирования путей.
+    #
+    # Отчёт делаем HTML-файлом, а НЕ вопросом «введи номер» в консоли: в GUI
+    # Read-Host подменён на модальное окно ввода, и оно перекрывает ровно тот
+    # список, по которому надо выбирать. В браузере список листается, ссылки
+    # кликаются, а файл заодно годится как акт на объекте — кладём его рядом
+    # с HHToolbox.log, в профиль пользователя.
     if ($files.Count -eq 0) { return }
     Write-Host ""
-    Write-Host "   Проверить файл из списка [1/5] на VirusTotal — введи номер." -ForegroundColor Cyan
-    Write-Host "   Можно несколько через запятую. Уйдёт только хеш, не файл." -ForegroundColor Gray
-    $ans = (Read-Host "   Номера (пусто — пропустить)").Trim()
-    if (-not $ans) { return }
-    foreach ($num in ($ans -split '[,\s]+' | Where-Object { $_ -match '^\d+$' })) {
-        $i = [int]$num - 1
-        if ($i -lt 0 -or $i -ge $files.Count) { Write-Host "   Нет строки $num." -ForegroundColor Yellow; continue }
-        $path = $files[$i]
-        try {
-            $sha = (Get-FileHash -Path $path -Algorithm SHA256 -ErrorAction Stop).Hash
-        } catch {
-            Write-Host "   Не прочитать $path — $($_.Exception.Message)" -ForegroundColor Yellow; continue
-        }
-        Write-Host "   $path" -ForegroundColor White
-        Write-Host "   SHA256: $sha" -ForegroundColor Gray
-        Write-Log "Триаж: VirusTotal $sha ($path)"
-        Start-Process "https://www.virustotal.com/gui/file/$sha"
+    Write-Host "   Считаю SHA256 для отчёта ($($files.Count) файлов)..." -ForegroundColor Cyan
+    $esc = { param($s) ([string]$s).Replace('&', '&amp;').Replace('<', '&lt;').Replace('>', '&gt;').Replace('"', '&quot;') }
+    $rows = foreach ($it in $files) {
+        $sha = try { (Get-FileHash -Path $it.Path -Algorithm SHA256 -ErrorAction Stop).Hash } catch { '' }
+        $vt  = if ($sha) { "<a href=""https://www.virustotal.com/gui/file/$sha"" target=""_blank"">проверить</a>" } else { 'нет доступа к файлу' }
+        $bad = if ($it.Status -ne 'Valid' -or $it.Note) { ' class="bad"' } else { '' }
+        $srcCell = if ($it.Source) { "<a href=""$(& $esc $it.Source)"" target=""_blank"">$(& $esc $it.Source)</a>" } else { '—' }
+        "<tr$bad><td>$(& $esc $it.Path)$(& $esc $it.Note)</td><td>$(& $esc $it.Status)</td><td>$(& $esc $it.Signer)</td><td>$('{0:dd.MM.yyyy}' -f $it.Created)</td><td class=""src"">$srcCell</td><td class=""h"">$sha</td><td>$vt</td></tr>"
+    }
+    $html = @"
+<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><title>Триаж — $env:COMPUTERNAME</title>
+<style>
+ body{background:#1e1e1e;color:#ddd;font:14px/1.5 "Segoe UI",sans-serif;margin:24px}
+ h1{font-size:20px;margin:0 0 4px} p.sub{color:#888;margin:0 0 20px}
+ table{border-collapse:collapse;width:100%} th,td{padding:7px 10px;border-bottom:1px solid #333;text-align:left;vertical-align:top}
+ th{color:#8ab4f8;font-weight:600;white-space:nowrap} tr.bad td{background:#2b1d1d}
+ td.h{font:12px Consolas,monospace;color:#888;word-break:break-all} td.src{max-width:340px;word-break:break-all}
+ a{color:#8ab4f8} .note{color:#888;margin-top:18px}
+</style></head><body>
+<h1>Триаж: процессы из нестандартных папок</h1>
+<p class="sub">$env:COMPUTERNAME · $(Get-Date -Format 'dd.MM.yyyy HH:mm') · отмечено пунктов всего: $hits</p>
+<table><tr><th>Файл</th><th>Подпись</th><th>Издатель</th><th>Создан</th><th>Источник</th><th>SHA256</th><th>VirusTotal</th></tr>
+$($rows -join "`n")
+</table>
+<p class="note">Ссылка отправляет на VirusTotal только хеш — сам файл никуда не загружается.<br>
+Красным отмечены строки без действительной подписи или с расхождением издателя и метаданных. Это не приговор: смотри дату создания и источник.</p>
+</body></html>
+"@
+    $report = Join-Path $env:USERPROFILE 'HHToolbox-triage.html'
+    try {
+        $html | Out-File -FilePath $report -Encoding utf8 -ErrorAction Stop
+        Write-Host "   Отчёт: $report" -ForegroundColor Green
+        Write-Log "Триаж: отчёт $report"
+        Start-Process $report
+    } catch {
+        Write-Host "   Не удалось записать отчёт: $($_.Exception.Message)" -ForegroundColor Yellow
     }
 }
 
