@@ -1036,7 +1036,7 @@ function Show-GuiUtilityMenu {
 function Show-GuiSecurityScan {
     $f = New-Object System.Windows.Forms.Form
     $f.Text            = 'Проверка на вирусы / майнеры'
-    $f.Size            = New-Object System.Drawing.Size(460, 420)
+    $f.Size            = New-Object System.Drawing.Size(460, 470)
     $f.FormBorderStyle = 'FixedDialog'; $f.MaximizeBox = $false; $f.MinimizeBox = $false
     $f.StartPosition   = 'CenterScreen'
     Initialize-DarkForm $f
@@ -1061,6 +1061,10 @@ function Show-GuiSecurityScan {
     & $mk 'Emsisoft Emergency Kit'            { Invoke-SecurityTool 'https://dl.emsisoft.com/EmsisoftEmergencyKit.exe' 'EmsisoftEmergencyKit.exe' }.GetNewClosure()
     & $mk 'AdwCleaner — реклама/PUP/тулбары'   { Invoke-SecurityTool 'https://downloads.malwarebytes.com/file/adwcleaner' 'AdwCleaner.exe' }.GetNewClosure()
     & $mk 'Dr.Web CureIt! (сайт)'             { Start-Process 'https://free.drweb.com/cureit/' }.GetNewClosure()
+    # Триаж печатает отчёт через Write-Host, а он здесь уходит в лог-панель
+    # главного окна — за модальным диалогом её не видно. Поэтому кнопка только
+    # закрывает окно и ставит флаг, а сам запуск идёт после ShowDialog.
+    & $mk 'Триаж — искать то, что сканеры не видят' { $script:GuiTriage = $true; $f.Close() }.GetNewClosure()
 
     $bar = New-Object System.Windows.Forms.FlowLayoutPanel
     $bar.Dock = 'Bottom'; $bar.Height = 50; $bar.Padding = New-Object System.Windows.Forms.Padding(16, 8, 16, 8)
@@ -1076,6 +1080,22 @@ function Show-GuiSecurityScan {
     $f.CancelButton = $btnClose
     [void]$f.ShowDialog()
     $f.Dispose()
+
+    if ($script:GuiTriage) {
+        $script:GuiTriage = $false
+        # Триаж читает HKLM, службы, задачи и журналы — без админа половина
+        # проверок молча вернёт пустоту, что хуже честного отказа. Спрашиваем
+        # тем же способом, что и остальные админские пункты GUI.
+        if (-not (Test-Admin)) {
+            $ask = [System.Windows.Forms.MessageBox]::Show(
+                "Триаж читает системный реестр, службы и журналы — нужны права администратора.`nПерезапустить от имени администратора?",
+                'HH Toolbox', 'YesNo', 'Question')
+            if ($ask -eq [System.Windows.Forms.DialogResult]::Yes) { Invoke-GuiAdminRestart }
+            return
+        }
+        Write-Log 'GUI: Триаж'
+        Invoke-Triage
+    }
 }
 
 # --- Подменяем консольные версии оконными ($Menu менять не нужно) ---
