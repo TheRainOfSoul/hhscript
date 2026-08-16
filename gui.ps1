@@ -1063,8 +1063,11 @@ function Show-GuiSecurityScan {
     & $mk 'Dr.Web CureIt! (сайт)'             { Start-Process 'https://free.drweb.com/cureit/' }.GetNewClosure()
     # Триаж печатает отчёт через Write-Host, а он здесь уходит в лог-панель
     # главного окна — за модальным диалогом её не видно. Поэтому кнопка только
-    # закрывает окно и ставит флаг, а сам запуск идёт после ShowDialog.
-    & $mk 'Триаж — искать то, что сканеры не видят' { $script:GuiTriage = $true; $f.Close() }.GetNewClosure()
+    # помечает форму и закрывает окно, а сам запуск идёт после ShowDialog.
+    # Метку кладём в $f.Tag, а НЕ в $script:-переменную: кнопки создаются через
+    # .GetNewClosure(), и у замыкания своя область $script: — запись туда наружу
+    # не видна, кнопка молча ничего бы не делала. Форма же общая по ссылке.
+    & $mk 'Триаж — искать то, что сканеры не видят' { $f.Tag = 'triage'; $f.Close() }.GetNewClosure()
 
     $bar = New-Object System.Windows.Forms.FlowLayoutPanel
     $bar.Dock = 'Bottom'; $bar.Height = 50; $bar.Padding = New-Object System.Windows.Forms.Padding(16, 8, 16, 8)
@@ -1079,10 +1082,10 @@ function Show-GuiSecurityScan {
     $f.Controls.Add($bar)
     $f.CancelButton = $btnClose
     [void]$f.ShowDialog()
+    $runTriage = ($f.Tag -eq 'triage')
     $f.Dispose()
 
-    if ($script:GuiTriage) {
-        $script:GuiTriage = $false
+    if ($runTriage) {
         # Триаж читает HKLM, службы, задачи и журналы — без админа половина
         # проверок молча вернёт пустоту, что хуже честного отказа. Спрашиваем
         # тем же способом, что и остальные админские пункты GUI.
