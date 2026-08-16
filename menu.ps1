@@ -1299,6 +1299,138 @@ function Invoke-SecurityTool {
     Start-Process $exe
 }
 
+# Триаж: ищем НЕСОСТЫКОВКИ, а не сигнатуры.
+# Зачем это нужно, когда выше уже пять сканеров. Реальный случай (16.08.2026,
+# ноутбук ресепшена): Defender 11 раз подряд ловил NetSupport RAT, а рядом
+# спокойно работал второй загрузчик — переименованный апдейтер Notepad++
+# (GUP.exe с валидной подписью), который грузил из своей папки подменённую
+# libcurl.dll. Хост подписан честно, поэтому его пропустили и Defender при
+# прицельном скане обеих папок, и KVRT. Нашёлся он по расхождению: подпись
+# выдана Notepad++, а метаданные соседней DLL врали «IBM Corporation», при
+# subject сертификата «Dell Technologies, O=Morgan Stanley».
+# Сканер ищет известное. Триаж ищет то, что не сходится.
+function Invoke-Triage {
+    Write-Box 'Триаж: что не сходится' 'Yellow'
+    if (-not (Test-Admin)) {
+        Write-Host "   Требуются права администратора — выйди и запусти [A]." -ForegroundColor Yellow
+        return
+    }
+    Write-Host "   Ничего не удаляю и не качаю — только смотрю.`n" -ForegroundColor Gray
+    $hits = 0
+    # Доверенные корни. Кавычки учитываем намеренно: у служб PathName приходит
+    # как "C:\Program Files\...\x.exe" /svc, и якорь ^C: без ?" не срабатывает —
+    # тогда в отчёт валятся все шестьдесят легальных служб машины.
+    # C:\Windows доверяем только начиная с подпапки: сам корень C:\Windows —
+    # любимое место для маскировки (там лежал System32NetworkNet.exe).
+    $trusted = '(?i)^"?(C:\\Windows\\[^\\]+\\|C:\\Program Files)'
+    $noise   = '(?i)\\WindowsApps\\|\\Windows Defender\\Platform\\'
+
+    # Смысл проверки: не решить за человека, а сжать стог сена. На рабочей
+    # станции клиента отсюда выходит 3-10 строк, и обе находки 16.08.2026
+    # были бы в этом списке — %APPDATA%\NetSupport\Service.exe и
+    # C:\ProgramData\ServicesFolder\...\*.databas. Подпись печатаем рядом, но
+    # валидная подпись не оправдывает файл со случайным именем в ProgramData:
+    # тот загрузчик был честно подписан Notepad++, потому что это и был
+    # переименованный GUP.exe.
+    Write-Host "   [1/5] Процессы из нестандартных папок" -ForegroundColor Cyan
+    Get-Process | Where-Object { $_.Path -and $_.Path -notmatch $trusted -and $_.Path -notmatch $noise } |
+        Sort-Object Path -Unique | ForEach-Object {
+            $sig  = Get-AuthenticodeSignature -FilePath $_.Path -ErrorAction SilentlyContinue
+            $note = ''
+            # ponytail: грубое сравнение по первому слову компании. Работает
+            # только здесь, в пользовательских папках; в Program Files оно шумит
+            # (Obsidian подписан Dynalist, Parsec — Unity Technologies) и потому
+            # туда не заходит. Начнёт шуметь у клиента — вести список исключений.
+            $co = (Get-Item $_.Path -ErrorAction SilentlyContinue).VersionInfo.CompanyName
+            if ($sig.Status -eq 'Valid' -and $co) {
+                $word = ($co -split '[ ,\.]')[0]
+                if ($word.Length -gt 3 -and $sig.SignerCertificate.Subject -notmatch [regex]::Escape($word)) {
+                    $note = "  ← подписал не тот, кто в метаданных ($co)"
+                }
+            }
+            $color = if ($sig.Status -eq 'Valid' -and -not $note) { 'Gray' } else { 'Red' }
+            Write-Host ("       [{0}] {1}{2}" -f $sig.Status, $_.Path, $note) -ForegroundColor $color
+            $hits++
+        }
+
+    # Процесс виден в списке, но отсутствует в WMI — так вело себя ровно то,
+    # что мы искали. Само по себе не приговор, но повод посмотреть вручную.
+    Write-Host "   [2/5] Процессы, невидимые для WMI" -ForegroundColor Cyan
+    $wmiIds = (Get-CimInstance Win32_Process).ProcessId
+    Get-Process | Where-Object { $_.Id -notin $wmiIds -and $_.Id -gt 4 } |
+        ForEach-Object { Write-Host "       PID $($_.Id)  $($_.ProcessName)" -ForegroundColor Red; $hits++ }
+
+    Write-Host "   [3/5] Каналы внедрения в чужие процессы" -ForegroundColor Cyan
+    foreach ($k in 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows',
+                   'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows NT\CurrentVersion\Windows') {
+        $v = (Get-ItemProperty $k -ErrorAction SilentlyContinue).AppInit_DLLs
+        if ($v) { Write-Host "       AppInit_DLLs = $v" -ForegroundColor Red; $hits++ }
+    }
+    if (Test-Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\AppCertDlls') {
+        Write-Host "       AppCertDlls присутствует — грузится в каждый новый процесс" -ForegroundColor Red; $hits++
+    }
+    foreach ($base in 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options',
+                      'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows NT\CurrentVersion\Image File Execution Options') {
+        Get-ChildItem $base -ErrorAction SilentlyContinue | ForEach-Object {
+            $v = Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue
+            if ($v.Debugger -or $v.VerifierDlls) {
+                Write-Host "       IFEO $($_.PSChildName): Debugger=$($v.Debugger) VerifierDlls=$($v.VerifierDlls)" -ForegroundColor Red; $hits++
+            }
+        }
+    }
+    foreach ($scope in 'Machine', 'User') {
+        [Environment]::GetEnvironmentVariables($scope).GetEnumerator() |
+            Where-Object { $_.Name -match 'COR_PROFILER|CORECLR_PROFILER' } |
+            ForEach-Object { Write-Host "       $scope $($_.Name) = $($_.Value)" -ForegroundColor Red; $hits++ }
+    }
+
+    # Путь до исполняемого файла приходит в трёх видах: в кавычках с аргументами
+    # ("C:\...\x.exe" /svc), через переменные (%windir%\system32\defrag.exe) и в
+    # формате 8.3 (C:\PROGRA~1\...). Без нормализации мимо фильтра проходят все
+    # три, и отчёт забивают семь десятков штатных задач Windows.
+    function Test-Suspicious ([string]$Path) {
+        if (-not $Path) { return $false }
+        $p = [Environment]::ExpandEnvironmentVariables($Path) -replace '^"([^"]*)".*', '$1'
+        $p = $p -replace '(?i)PROGRA~1', 'Program Files' -replace '(?i)PROGRA~2', 'Program Files (x86)'
+        return ($p -notmatch $trusted -and $p -notmatch $noise)
+    }
+
+    Write-Host "   [4/5] Автозапуск и службы из нестандартных папок" -ForegroundColor Cyan
+    # Записи из папки «Автозагрузка» приходят одним именем ярлыка, без пути —
+    # их оставляем как есть: именно так выглядел NetSupport.lnk, вторая точка
+    # закрепления, которую мы нашли уже после первой «чистки».
+    Get-CimInstance Win32_StartupCommand | Where-Object { Test-Suspicious $_.Command } |
+        Sort-Object Command -Unique |
+        ForEach-Object { Write-Host "       автозапуск $($_.Name): $($_.Command)" -ForegroundColor Yellow; $hits++ }
+    Get-CimInstance Win32_Service | Where-Object { Test-Suspicious $_.PathName } |
+        ForEach-Object { Write-Host "       служба $($_.Name): $($_.PathName)" -ForegroundColor Yellow; $hits++ }
+    Get-ScheduledTask -ErrorAction SilentlyContinue |
+        Where-Object { $_.State -ne 'Disabled' -and (Test-Suspicious ($_.Actions.Execute -join ' ')) } |
+        ForEach-Object { Write-Host "       задача $($_.TaskPath)$($_.TaskName): $($_.Actions.Execute -join '; ')" -ForegroundColor Yellow; $hits++ }
+
+    # «Faulting module name: unknown» означает выполнение кода в памяти, которой
+    # не соответствует ни один загруженный модуль. Обычно это внедрение, и именно
+    # эта строка вывела на загрузчик, когда Office падал, а сам был исправен.
+    Write-Host "   [5/5] Падения с внедрением кода (7 дней)" -ForegroundColor Cyan
+    Get-WinEvent -LogName Application -MaxEvents 400 -ErrorAction SilentlyContinue |
+        Where-Object { $_.Id -eq 1000 -and $_.TimeCreated -gt (Get-Date).AddDays(-7) -and $_.Message -match 'module name: unknown' } |
+        Select-Object -First 8 |
+        ForEach-Object {
+            $app = ([regex]::Match($_.Message, 'application name: (\S+)')).Groups[1].Value
+            Write-Host "       $($_.TimeCreated)  $app" -ForegroundColor Yellow; $hits++
+        }
+
+    Write-Host ""
+    if ($hits -eq 0) {
+        Write-Host "   Несостыковок не найдено." -ForegroundColor Green
+    } else {
+        Write-Host "   Отмечено пунктов: $hits" -ForegroundColor Yellow
+        Write-Host "   Это не приговор — часть окажется своим софтом. Проверять" -ForegroundColor Gray
+        Write-Host "   вручную: путь, подпись, дату создания файла." -ForegroundColor Gray
+    }
+    Write-Log "Триаж: отмечено пунктов $hits"
+}
+
 function Show-SecurityScan {
     do {
         Write-Box 'Проверка на вирусы / майнеры' 'Yellow'
@@ -1308,6 +1440,7 @@ function Show-SecurityScan {
         Write-Host "   [4] " -NoNewline -ForegroundColor Green; Write-Host "Emsisoft Emergency Kit"
         Write-Host "   [5] " -NoNewline -ForegroundColor Green; Write-Host "AdwCleaner — реклама/PUP/тулбары"
         Write-Host "   [6] " -NoNewline -ForegroundColor Green; Write-Host "Dr.Web CureIt! (сайт)"
+        Write-Host "   [7] " -NoNewline -ForegroundColor Green; Write-Host "Триаж — искать то, что сканеры не видят"
         Write-Host "   [0] " -NoNewline -ForegroundColor Red;   Write-Host "Назад"
         Write-Host ""
         switch ((Read-Host "  Выбор").Trim()) {
@@ -1317,6 +1450,7 @@ function Show-SecurityScan {
             '4' { Invoke-SecurityTool 'https://dl.emsisoft.com/EmsisoftEmergencyKit.exe' 'EmsisoftEmergencyKit.exe'; Wait-Continue }
             '5' { Invoke-SecurityTool 'https://downloads.malwarebytes.com/file/adwcleaner' 'AdwCleaner.exe'; Wait-Continue }
             '6' { Start-Process 'https://free.drweb.com/cureit/'; Wait-Continue }
+            '7' { Invoke-Triage; Wait-Continue }
             '0' { return }
             default { Write-Host "`n  Неверный выбор." -ForegroundColor Yellow; Start-Sleep 1 }
         }
