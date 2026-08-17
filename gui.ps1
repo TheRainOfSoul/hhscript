@@ -14,6 +14,27 @@ try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { $null =
 $MenuUrl = 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/menu.ps1'
 $GuiUrl  = 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/gui.ps1'
 
+# raw.githubusercontent -> cdn.jsdelivr.net (зеркало на другом CDN), иначе $null.
+function ConvertTo-JsDelivr {
+    param([string]$Url)
+    if ($Url -match '^https?://raw\.githubusercontent\.com/([^/]+)/([^/]+)/([^/]+)/(.+)$') {
+        return "https://cdn.jsdelivr.net/gh/$($Matches[1])/$($Matches[2])@$($Matches[3])/$($Matches[4])"
+    }
+    return $null
+}
+
+# Текст удалённого скрипта: сперва raw, при сбое — зеркало jsDelivr. BOM срезаем.
+function Get-RemoteText {
+    param([string]$Url)
+    $urls = @($Url); $alt = ConvertTo-JsDelivr $Url; if ($alt) { $urls += $alt }
+    $lastErr = $null
+    foreach ($u in $urls) {
+        try { return ([string](Invoke-RestMethod -Uri $u -ErrorAction Stop)).TrimStart([char]0xFEFF) }
+        catch { $lastErr = $_ }
+    }
+    throw $lastErr
+}
+
 # --- WinForms требует STA-поток (в Windows PowerShell 5.1 он по умолчанию) ---
 if ([Threading.Thread]::CurrentThread.GetApartmentState() -ne 'STA') {
     Write-Host "`n  GUI требует STA-потока, а текущий сеанс — MTA (обычно это pwsh 7)." -ForegroundColor Yellow
@@ -151,8 +172,8 @@ if (-not $Menu) {
     # «переменная назначена, но не используется» (чтения через iex он не видит).
     Set-Variable -Name SkipCliMenu -Value $true
     try {
-        # TrimStart: BOM файла приходит от irm как символ U+FEFF и ломает iex.
-        Invoke-Expression ([string](Invoke-RestMethod -Uri $MenuUrl)).TrimStart([char]0xFEFF)
+        # Get-RemoteText: чистит BOM (иначе iex падает) и при сбое raw берёт jsDelivr.
+        Invoke-Expression (Get-RemoteText $MenuUrl)
     } catch {
         [void][System.Windows.Forms.MessageBox]::Show(
             "Не удалось загрузить menu.ps1:`n$($_.Exception.Message)", 'HH Toolbox', 'OK', 'Error')

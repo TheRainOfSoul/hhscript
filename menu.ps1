@@ -124,6 +124,28 @@ $Runtimes = @(
 # =====================================================================
 #  Вспомогательные функции
 # =====================================================================
+# raw.githubusercontent -> cdn.jsdelivr.net (зеркало на другом CDN), иначе $null.
+function ConvertTo-JsDelivr {
+    param([string]$Url)
+    if ($Url -match '^https?://raw\.githubusercontent\.com/([^/]+)/([^/]+)/([^/]+)/(.+)$') {
+        return "https://cdn.jsdelivr.net/gh/$($Matches[1])/$($Matches[2])@$($Matches[3])/$($Matches[4])"
+    }
+    return $null
+}
+
+# Текст удалённого скрипта: сперва raw, при сбое (503/таймаут) — зеркало jsDelivr.
+# BOM (U+FEFF) срезаем, иначе iex падает на первом токене.
+function Get-RemoteText {
+    param([string]$Url)
+    $urls = @($Url); $alt = ConvertTo-JsDelivr $Url; if ($alt) { $urls += $alt }
+    $lastErr = $null
+    foreach ($u in $urls) {
+        try { return ([string](Invoke-RestMethod -Uri $u -ErrorAction Stop)).TrimStart([char]0xFEFF) }
+        catch { $lastErr = $_ }
+    }
+    throw $lastErr
+}
+
 function Test-Admin {
     $id = [Security.Principal.WindowsIdentity]::GetCurrent()
     (New-Object Security.Principal.WindowsPrincipal($id)).IsInRole(
@@ -142,10 +164,9 @@ function Invoke-Remote {
     param([string]$Url)
     try {
         Write-Host "`n  Загрузка: $Url`n" -ForegroundColor DarkGray
-        # TrimStart: irm отдаёт BOM файла как символ U+FEFF (Encoding.GetString его
-        # не срезает), и тогда iex падает на первом же токене. Чужие скрипты с BOM
-        # нам не подконтрольны, поэтому чистим здесь.
-        Invoke-Expression ([string](Invoke-RestMethod -Uri $Url)).TrimStart([char]0xFEFF)
+        # Get-RemoteText: чистит BOM (иначе iex падает на первом токене) и при сбое
+        # raw переключается на зеркало jsDelivr. Чужие URL (не raw) идут как есть.
+        Invoke-Expression (Get-RemoteText $Url)
     } catch {
         Write-Host "`n  Ошибка: $($_.Exception.Message)" -ForegroundColor Red
     }
@@ -278,7 +299,12 @@ function Install-KbLayout {
         New-Item -ItemType Directory -Force -Path $tmp | Out-Null
         $zip = Join-Path $env:TEMP 'hh-kb.zip'
         $wc = New-Object System.Net.WebClient
-        try { $wc.DownloadFile($ZipUrl, $zip) } finally { $wc.Dispose() }
+        $urls = @($ZipUrl); $altZip = ConvertTo-JsDelivr $ZipUrl; if ($altZip) { $urls += $altZip }
+        try {
+            $ok = $false
+            foreach ($u in $urls) { try { $wc.DownloadFile($u, $zip); $ok = $true; break } catch { $null = $_ } }
+            if (-not $ok) { throw 'не удалось скачать (raw и jsDelivr недоступны)' }
+        } finally { $wc.Dispose() }
         Expand-Archive -Path $zip -DestinationPath $tmp -Force
         Remove-Item $zip -Force -ErrorAction SilentlyContinue
     } catch { Write-Host "   Ошибка загрузки раскладки: $($_.Exception.Message)" -ForegroundColor Red; return $false }
@@ -1838,7 +1864,7 @@ if (-not $SkipCliMenu) {
     $GuiStarted = $false
     if (-not $ForceCli -and [Threading.Thread]::CurrentThread.GetApartmentState() -eq 'STA') {
         Write-Host "`n  HH Toolbox — загрузка интерфейса..." -ForegroundColor Cyan
-        try { Invoke-Expression ([string](Invoke-RestMethod -Uri $GuiUrl)).TrimStart([char]0xFEFF) }
+        try { Invoke-Expression (Get-RemoteText $GuiUrl) }
         catch {
             Write-Host "`n  GUI не запустился ($($_.Exception.Message))." -ForegroundColor DarkYellow
             Write-Host "  Открываю консольное меню.`n" -ForegroundColor DarkYellow
