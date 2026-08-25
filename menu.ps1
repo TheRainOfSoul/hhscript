@@ -1119,6 +1119,128 @@ function Show-AdapterInfo {
     }
 }
 
+# Строка отчёта Network Doctor: [OK]/[!!]/[~] + подпись + деталь.
+function Write-DoctorLine {
+    param([ValidateSet('ok', 'bad', 'warn')][string]$State, [string]$Label, [string]$Detail)
+    $mark = @{ ok = '[OK]'; bad = '[!!]'; warn = '[~]' }[$State]
+    $col = @{ ok = 'Green'; bad = 'Red'; warn = 'Yellow' }[$State]
+    Write-Host ("   {0,-4} {1}" -f $mark, $Label) -ForegroundColor $col
+    if ($Detail) { Write-Host "        $Detail" -ForegroundColor DarkGray }
+}
+
+# Пинг через .NET (одинаково в PS 5.1/7). Возвращает потери % и средний RTT.
+function Test-Ping {
+    param([string]$Target, [int]$Count = 4, [int]$TimeoutMs = 1000)
+    $p = New-Object System.Net.NetworkInformation.Ping
+    $sent = 0; $recv = 0; $rtts = @()
+    for ($i = 0; $i -lt $Count; $i++) {
+        $sent++
+        try { $r = $p.Send($Target, $TimeoutMs); if ($r.Status -eq 'Success') { $recv++; $rtts += [int]$r.RoundtripTime } } catch { $null = $_ }
+    }
+    $loss = if ($sent) { [int](100 * ($sent - $recv) / $sent) } else { 100 }
+    $avg = if ($rtts.Count) { [int](($rtts | Measure-Object -Average).Average) } else { $null }
+    [pscustomobject]@{ Target = $Target; Sent = $sent; Recv = $recv; Loss = $loss; AvgMs = $avg }
+}
+
+# Network Doctor: батарея проверок «почему не работает сеть/интернет» + вердикт.
+# Всё только читает (ping/DNS/конфиг) — ничего не меняет.
+function Invoke-NetworkDoctor {
+    Write-Box 'Network Doctor — диагностика сети' 'Cyan'
+    $verdict = @()
+
+    # 1) Физическая линия / адаптеры
+    $ups = @(Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object Status -eq 'Up')
+    if ($ups.Count) {
+        Write-DoctorLine ok 'Сетевой адаптер активен' (($ups | ForEach-Object { "$($_.Name) — $($_.LinkSpeed)" }) -join '; ')
+    } else {
+        Write-DoctorLine bad 'Нет активных адаптеров' 'Кабель не подключён или Wi-Fi выключен.'
+        Write-Host ''; Write-Host '   → Нет физического подключения. Проверь кабель/адаптер/Wi-Fi.' -ForegroundColor Cyan
+        return
+    }
+
+    # 2) IP-конфигурация (предпочитаем конфиг со шлюзом)
+    $cfg = Get-NetIPConfiguration -ErrorAction SilentlyContinue |
+        Where-Object { $_.IPv4Address } |
+        Sort-Object { [bool]$_.IPv4DefaultGateway } -Descending | Select-Object -First 1
+    $ip = $null; $gw = $null; $dns = @()
+    if ($cfg) {
+        $ip = [string]$cfg.IPv4Address.IPAddress
+        $gw = [string]$cfg.IPv4DefaultGateway.NextHop
+        $dns = @($cfg.DNSServer | Where-Object { $_.AddressFamily -eq 2 } | ForEach-Object { $_.ServerAddresses })
+    }
+    $ipDead = $false
+    if (-not $ip) {
+        Write-DoctorLine bad 'Нет IPv4-адреса' 'Адаптер активен, но адрес не назначен.'
+        $verdict += 'Нет IP-адреса — DHCP не выдал. Проверь DHCP на роутере или задай статику.'
+        $ipDead = $true
+    } elseif ($ip -like '169.254.*') {
+        Write-DoctorLine bad "APIPA-адрес $ip" 'DHCP не ответил — Windows назначил автоадрес 169.254.x.x.'
+        $verdict += 'ПК не получил IP от DHCP. Проверь кабель до роутера / DHCP-сервер.'
+        $ipDead = $true
+    } else {
+        Write-DoctorLine ok "IPv4-адрес: $ip" ("Шлюз: " + $(if ($gw) { $gw } else { 'нет' }) + "; DNS: " + $(if ($dns) { $dns -join ', ' } else { 'нет' }))
+    }
+
+    # 3) Шлюз
+    $gwOk = $false
+    if ($gw) {
+        $g = Test-Ping -Target $gw -Count 4
+        if ($g.Recv) {
+            $gwOk = $true
+            Write-DoctorLine ok "Шлюз $gw отвечает" ("потери $($g.Loss)%, задержка $($g.AvgMs) мс")
+        } else {
+            Write-DoctorLine bad "Шлюз $gw не отвечает" 'Роутер/локальная сеть недоступны.'
+            $verdict += 'Шлюз недоступен — проблема в локальной сети или роутере (перезагрузи роутер, проверь кабель).'
+        }
+    } elseif (-not $ipDead) {
+        Write-DoctorLine warn 'Шлюз по умолчанию не задан' 'Без шлюза нет выхода за пределы подсети.'
+        $verdict += 'Нет шлюза по умолчанию — проверь настройки сети/DHCP.'
+    }
+
+    # 4) Интернет (ICMP до публичных адресов)
+    $netOk = $false
+    if (-not $ipDead) {
+        $c = Test-Ping -Target '1.1.1.1' -Count 4
+        if (-not $c.Recv) { $c = Test-Ping -Target '8.8.8.8' -Count 4 }
+        if ($c.Recv) {
+            $netOk = $true
+            Write-DoctorLine ok "Интернет доступен ($($c.Target))" ("потери $($c.Loss)%, задержка $($c.AvgMs) мс")
+            if ($c.Loss -ge 20) { Write-DoctorLine warn "Потери пакетов $($c.Loss)%" 'Связь нестабильна.'; $verdict += "Высокие потери ($($c.Loss)%) — нестабильный канал/Wi-Fi." }
+        } else {
+            Write-DoctorLine bad 'Интернет недоступен (ICMP)' 'Пинг до 1.1.1.1 и 8.8.8.8 не прошёл.'
+            if ($gwOk) { $verdict += 'Локальная сеть работает, но нет выхода в интернет — проблема у провайдера/роутера (WAN).' }
+        }
+    }
+
+    # 5) DNS-резолвинг
+    if (-not $ipDead) {
+        $dnsOk = $false
+        try { $null = Resolve-DnsName -Name 'cloudflare.com' -Type A -QuickTimeout -ErrorAction Stop; $dnsOk = $true }
+        catch { try { $null = [System.Net.Dns]::GetHostEntry('cloudflare.com'); $dnsOk = $true } catch { $dnsOk = $false } }
+        if ($dnsOk) {
+            Write-DoctorLine ok 'DNS-имена резолвятся' 'cloudflare.com → адрес получен.'
+        } else {
+            Write-DoctorLine bad 'DNS не резолвит имена' 'Имена сайтов не преобразуются в адреса.'
+            if ($netOk) { $verdict += 'Интернет есть, но DNS не работает — смени DNS на 1.1.1.1 / 8.8.8.8 (раздел «Сетевые утилиты»).' }
+        }
+    }
+
+    # 6) Внешний IP (доп. подтверждение полного доступа)
+    if ($netOk) {
+        $pub = try { (Invoke-RestMethod 'https://api.ipify.org' -TimeoutSec 6) } catch { $null }
+        if ($pub) { Write-DoctorLine ok "Внешний IP: $pub" 'Полный доступ к интернету подтверждён.' }
+    }
+
+    # Вердикт
+    Write-Host ''
+    if ($verdict.Count) {
+        Write-Host '   Итог:' -ForegroundColor Yellow
+        $verdict | ForEach-Object { Write-Host "   → $_" -ForegroundColor Cyan }
+    } else {
+        Write-Host '   → Сеть работает нормально: адаптер, IP, шлюз, интернет и DNS в порядке.' -ForegroundColor Green
+    }
+}
+
 function Show-NetworkMenu {
     do {
         Write-Box 'Сетевые утилиты' 'Cyan'
@@ -1933,6 +2055,7 @@ $Menu = @(
     @{ Label = 'Информация о ПК';                                 Action = { Show-PCInfo; Wait-Continue } }
     @{ Label = 'Анализ ПК — Glow (сохранение в HTML)';            Action = { Invoke-Glow; Wait-Continue } }
     @{ Label = 'Сетевые утилиты (DNS, ping, сброс сети)';         Action = { Show-NetworkMenu } }
+    @{ Label = 'Network Doctor (диагностика проблем сети)';       Action = { Invoke-NetworkDoctor; Wait-Continue } }
     @{ Label = 'Сканер сети (найти камеры/устройства)';           Action = { Show-NetworkScan; Wait-Continue } }
     @{ Label = 'Калькулятор диска и полосы (клон Dahua Basic)';   Action = { Show-StorageCalc; Wait-Continue } }
     @{ Label = 'Стресс-тест ПК (CPU-прожиг + OCCT/FurMark/диск)'; Action = { Invoke-Remote 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/scripts/stresstest.ps1'; Wait-Continue } }
