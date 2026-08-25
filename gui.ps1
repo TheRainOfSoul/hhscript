@@ -46,6 +46,14 @@ if ([Threading.Thread]::CurrentThread.GetApartmentState() -ne 'STA') {
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName Microsoft.VisualBasic   # InputBox — замена Read-Host в GUI
+# DPI-осознанность процесса ДО первого окна: иначе Windows растягивает окна
+# битмапом на масштабе 125/150% (мыло). SetHighDpiMode в WinPS 5.1 недоступен,
+# манифеста у irm-скрипта нет — поэтому System-DPI-aware через P/Invoke, а
+# раскладку каждой формы масштабируем вручную в Initialize-DarkForm.
+try {
+    Add-Type -Namespace HH -Name Dpi -MemberDefinition '[DllImport("user32.dll")] public static extern bool SetProcessDPIAware();' -ErrorAction Stop
+    [void][HH.Dpi]::SetProcessDPIAware()
+} catch { $null = $_ }
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
 # =====================================================================
@@ -93,6 +101,19 @@ function Initialize-DarkForm($form) {
     $form.BackColor = $script:Theme.Bg
     $form.ForeColor = $script:Theme.Text
     $form.Font      = $script:Theme.Font
+    # High-DPI: авто-скейл WinForms для программных форм не срабатывает, а
+    # Form.Scale() надёжно тянет раскладку и размеры. Масштабируем в Load —
+    # когда все дочерние контролы уже добавлены. На 100% (96 DPI) фактор = 1.0
+    # → Scale пропускается, поведение ровно как было.
+    $form.AutoScaleMode = [System.Windows.Forms.AutoScaleMode]::None
+    $form.Add_Load({
+            param($s, $e)
+            try {
+                $g = $s.CreateGraphics(); $dpi = $g.DpiX; $g.Dispose()
+                $factor = [double]$dpi / 96.0
+                if ($factor -gt 1.01) { $s.Scale([System.Drawing.SizeF]::new($factor, $factor)) }
+            } catch { $null = $_ }
+        })
     Set-DarkTitleBar $form
 }
 
