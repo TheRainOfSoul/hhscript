@@ -911,7 +911,7 @@ function Show-GuiRtsp {
     Set-DarkLabel $lv; $f.Controls.Add($lv)
     $cb = New-Object System.Windows.Forms.ComboBox
     $cb.Left = 114; $cb.Top = $y; $cb.Width = 300; $cb.DropDownStyle = 'DropDownList'
-    $cb.BackColor = $script:Theme.ConsoleBg; $cb.ForeColor = $script:Theme.Text; $cb.FlatStyle = 'Flat'
+    Set-DarkInput $cb
     [void]$cb.Items.AddRange(@('Dahua', 'Hikvision', 'Uniview', 'Свой путь'))
     $cb.SelectedIndex = 0; $f.Controls.Add($cb); $y += 32
 
@@ -944,6 +944,9 @@ function Show-GuiRtsp {
         catch { [void][System.Windows.Forms.MessageBox]::Show("Не удалось запустить VLC:`n$($_.Exception.Message)", 'RTSP', 'OK', 'Error') }
     }.GetNewClosure())
 
+    $f.AcceptButton = $btn                       # Enter — открыть в VLC
+    $f.KeyPreview = $true
+    $f.Add_KeyDown({ if ($_.KeyCode -eq [System.Windows.Forms.Keys]::Escape) { $f.Close() } }.GetNewClosure())
     [void]$f.ShowDialog(); $f.Dispose()
 }
 
@@ -980,6 +983,12 @@ function Show-GuiNetworkScan {
     $status.Left = 610; $status.Top = 12; $status.Width = 170; $status.Height = 23; $status.TextAlign = 'MiddleLeft'
     $status.Anchor = 'Top, Left, Right'
     Set-DarkLabel $status
+    $status.Text = 'ПКМ — меню · 2× — веб'
+    $tip = New-Object System.Windows.Forms.ToolTip
+    $tip.AutoPopDelay = 12000; $tip.InitialDelay = 400
+    $tip.SetToolTip($btnScan, 'Пинг-скан подсети + проба портов камер (камеры выделяются цветом)')
+    $tip.SetToolTip($btnRtsp, 'Открыть RTSP-поток камеры в VLC (можно ввести IP вручную)')
+    $tip.SetToolTip($btnDb, 'Перекачать базу вендоров по MAC (OUI) — удобно заранее в офисе')
     # Принудительно перекачать базу вендоров (удобно скачать заранее в офисе).
     $btnDb.Add_Click({
         $status.Text = 'Обновляю базу вендоров...'
@@ -1042,6 +1051,25 @@ function Show-GuiNetworkScan {
         if ($_.Control -and $_.KeyCode -eq [System.Windows.Forms.Keys]::C -and $lv.SelectedItems.Count) {
             & $copy (& $rowText $lv.SelectedItems[0])
         }
+    }.GetNewClosure())
+    $tip.SetToolTip($lv, 'Камеры выделены цветом · 2× клик — веб-интерфейс · ПКМ — RTSP/копировать · клик по заголовку — сортировка')
+    # Двойной клик по устройству — открыть его веб-интерфейс.
+    $lv.Add_DoubleClick({ if ($lv.SelectedItems.Count) { Start-Process ('http://' + $lv.SelectedItems[0].SubItems[0].Text) } }.GetNewClosure())
+    # Сортировка по клику на заголовок: IP — по версии, порты — по первому числу, прочее — строкой.
+    $sortState = @{ col = -1; asc = $true }
+    $lv.Add_ColumnClick({
+        $col = $_.Column
+        if ($sortState.col -eq $col) { $sortState.asc = -not $sortState.asc } else { $sortState.col = $col; $sortState.asc = $true }
+        $keyed = @($lv.Items | ForEach-Object { [pscustomobject]@{ It = $_; Key = $_.SubItems[$col].Text } })
+        if ($col -eq 0) {
+            $sorted = @($keyed | Sort-Object -Property @{ Expression = { try { [version]$_.Key } catch { $_.Key } } })
+        } elseif ($col -eq 4) {
+            $sorted = @($keyed | Sort-Object -Property @{ Expression = { $n = (($_.Key -split ',')[0] -replace '\D'); if ($n) { [int]$n } else { 999999 } } })
+        } else {
+            $sorted = @($keyed | Sort-Object Key)
+        }
+        if (-not $sortState.asc) { [array]::Reverse($sorted) }
+        $lv.BeginUpdate(); $lv.Items.Clear(); foreach ($s in $sorted) { [void]$lv.Items.Add($s.It) }; $lv.EndUpdate()
     }.GetNewClosure())
 
     # Локальная копия: $script: внутри .GetNewClosure() указывает на модуль замыкания,
