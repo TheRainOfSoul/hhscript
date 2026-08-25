@@ -1857,8 +1857,12 @@ function Get-CameraPortMap {
 
 # Путь к vlc.exe (Program Files / реестр / PATH), иначе $null.
 function Get-VlcPath {
-    foreach ($c in @((Join-Path $env:ProgramFiles 'VideoLAN\VLC\vlc.exe'), (Join-Path ${env:ProgramFiles(x86)} 'VideoLAN\VLC\vlc.exe'))) {
-        if ($c -and (Test-Path $c)) { return $c }
+    $cand = @()
+    if ($env:ProgramFiles) { $cand += (Join-Path $env:ProgramFiles 'VideoLAN\VLC\vlc.exe') }
+    $p86 = ${env:ProgramFiles(x86)}
+    if ($p86) { $cand += (Join-Path $p86 'VideoLAN\VLC\vlc.exe') }
+    foreach ($c in $cand) {
+        if (Test-Path $c) { return $c }
     }
     foreach ($k in 'HKLM:\SOFTWARE\VideoLAN\VLC', 'HKLM:\SOFTWARE\WOW6432Node\VideoLAN\VLC') {
         try { $d = (Get-ItemProperty $k -ErrorAction Stop).InstallDir; if ($d) { $p = Join-Path $d 'vlc.exe'; if (Test-Path $p) { return $p } } } catch { $null = $_ }

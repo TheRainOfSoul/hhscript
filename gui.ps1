@@ -935,7 +935,8 @@ function Show-GuiRtsp {
         }
         $ip = $tb['ip'].Text.Trim()
         if (-not $ip) { return }
-        $auth = if ($tb['user'].Text) { "$($tb['user'].Text):$($tb['pass'].Text)@" } else { '' }
+        # Логин/пароль экранируем: у камер часто пароли вида Admin#123 (@ : / # ? ломают URL).
+        $auth = if ($tb['user'].Text) { "$([Uri]::EscapeDataString($tb['user'].Text)):$([Uri]::EscapeDataString($tb['pass'].Text))@" } else { '' }
         $path = $tPath.Text.TrimStart('/')
         $port = $tb['port'].Text.Trim(); if (-not $port) { $port = '554' }
         $url = "rtsp://$auth${ip}:$port/$path"
@@ -1028,6 +1029,14 @@ function Show-GuiNetworkScan {
     $miCell.Add_Click({ if ($hit.sub) { & $copy $hit.sub.Text } }.GetNewClosure())
     $miRow = $cm.Items.Add('Копировать строку')
     $miRow.Add_Click({ if ($hit.item) { & $copy (& $rowText $hit.item) } }.GetNewClosure())
+    # Меню могли открыть с клавиатуры (Menu/Shift+F10) или после пересканирования —
+    # тогда $hit устарел. Обновляем из выделения, если ссылка мертва.
+    $cm.Add_Opening({
+        if ((-not $hit.item) -or (-not $lv.Items.Contains($hit.item))) {
+            if ($lv.SelectedItems.Count) { $hit.item = $lv.SelectedItems[0]; $hit.sub = $null }
+            else { $hit.item = $null; $hit.sub = $null }
+        }
+    }.GetNewClosure())
     $lv.ContextMenuStrip = $cm
     $lv.Add_KeyDown({
         if ($_.Control -and $_.KeyCode -eq [System.Windows.Forms.Keys]::C -and $lv.SelectedItems.Count) {
@@ -1035,6 +1044,10 @@ function Show-GuiNetworkScan {
         }
     }.GetNewClosure())
 
+    # Локальная копия: $script: внутри .GetNewClosure() указывает на модуль замыкания,
+    # а не на скоуп скрипта (подвох проекта) — там $script:Theme = $null и ForeColor
+    # упал бы на первой же камере. Захватываем цвет в локальную переменную.
+    $accent = $script:Theme.AccentText
     $btnScan.Add_Click({
         $base = $tb.Text.Trim()
         $status.Text = "Сканирую $base.1-254 ..."
@@ -1056,7 +1069,7 @@ function Show-GuiNetworkScan {
                 [void]$it.SubItems.Add($(if ($ports) { ($ports -join ',') } else { '' }))
                 # Камера: открыт RTSP(554) или вендор — известный камерный.
                 $isCam = ($ports -contains 554) -or (@('Dahua', 'Hikvision', 'Uniview', 'Axis') -contains $d.Vendor)
-                if ($isCam) { $it.ForeColor = $script:Theme.AccentText; $camCount++ }
+                if ($isCam) { $it.ForeColor = $accent; $camCount++ }
                 [void]$lv.Items.Add($it)
             }
             $lv.EndUpdate()
