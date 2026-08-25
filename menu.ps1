@@ -254,6 +254,41 @@ function Confirm-Winget {
     return $ok
 }
 
+# Ярлыки приложений (меню Пуск + рабочий стол, для всех и для текущего юзера).
+# Снимок до установки + снимок после = появившийся ярлык, который и запускаем.
+function Get-AppShortcuts {
+    $dirs = @(
+        [Environment]::GetFolderPath('CommonStartMenu'),
+        [Environment]::GetFolderPath('StartMenu'),
+        [Environment]::GetFolderPath('CommonDesktopDirectory'),
+        [Environment]::GetFolderPath('Desktop')
+    ) | Where-Object { $_ -and (Test-Path $_) }
+    if (-not $dirs) { return @() }
+    @(Get-ChildItem -Path $dirs -Recurse -Filter *.lnk -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty FullName)
+}
+
+# Запустить только что установленное приложение: ярлык, которого не было в $Before.
+# Служебные ярлыки (деинсталл/сайт/справка) отсеиваем, из остатка берём лучший по имени.
+function Start-NewApp {
+    param([string[]]$Before, [string]$Name)
+    $new = @((Get-AppShortcuts) | Where-Object { $_ -notin $Before })
+    if (-not $new.Count) { return }
+    $junk = 'uninstall|deinstall|удал|website|home ?page|сайт|readme|documentation|docs|help|справк|manual|changelog|release'
+    $cand = @($new | Where-Object { [IO.Path]::GetFileNameWithoutExtension($_) -notmatch $junk })
+    if (-not $cand.Count) { $cand = $new }
+    $best = $null
+    foreach ($w in ($Name -split '[\s/()]+' | Where-Object { $_.Length -ge 3 })) {
+        $best = $cand | Where-Object { [IO.Path]::GetFileNameWithoutExtension($_) -like "*$w*" } | Select-Object -First 1
+        if ($best) { break }
+    }
+    if (-not $best) { $best = $cand[0] }
+    try {
+        Write-Host "   Запускаю '$([IO.Path]::GetFileNameWithoutExtension($best))'..." -ForegroundColor Green
+        Start-Process $best
+    } catch { Write-Host "   Не удалось запустить: $($_.Exception.Message)" -ForegroundColor Yellow }
+}
+
 # Установить один пункт: winget (Winget или WingetList), сайт (Url) или DISM
 # (Action='netfx3'). Возвращает $true при успехе, $false при проблеме — для сводки.
 function Install-Item {
@@ -271,12 +306,15 @@ function Install-Item {
     $ids = if ($p.WingetList) { $p.WingetList } elseif ($p.Winget) { @($p.Winget) } else { @() }
     if ($ids.Count -and (Confirm-Winget)) {
         $ok = $true
+        $before = Get-AppShortcuts
         Write-Host "`n   Установка '$($p.Name)'..." -ForegroundColor Green
         foreach ($id in $ids) {
             Write-Host "    winget: $id" -ForegroundColor DarkGray
             winget install --id $id -e --source winget --accept-package-agreements --accept-source-agreements
             if ($LASTEXITCODE -ne 0) { $ok = $false }
         }
+        # после установки открыть появившееся приложение (ярлык, которого не было)
+        if ($ok) { Start-NewApp -Before $before -Name $p.Name }
         return $ok
     }
     if ($p.Url) {
