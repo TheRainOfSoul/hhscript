@@ -887,6 +887,65 @@ function Show-GuiNetwork {
 #  2c. Сканер сети — окно со списком найденных устройств.
 #  Считает теми же Get-LanBase / Get-LanDevices из menu.ps1.
 # =====================================================================
+function Show-GuiRtsp {
+    param([string]$IP)
+    $f = New-Object System.Windows.Forms.Form
+    $f.Text = 'RTSP-поток в VLC'
+    $f.Size = New-Object System.Drawing.Size(452, 330)
+    $f.FormBorderStyle = 'FixedDialog'; $f.MaximizeBox = $false; $f.MinimizeBox = $false; $f.StartPosition = 'CenterParent'
+    Initialize-DarkForm $f
+
+    $tb = @{}
+    $y = 18
+    foreach ($r in @(@('IP камеры:', 'ip', [string]$IP), @('Логин:', 'user', 'admin'), @('Пароль:', 'pass', ''), @('Порт:', 'port', '554'))) {
+        $l = New-Object System.Windows.Forms.Label
+        $l.Text = $r[0]; $l.Left = 16; $l.Top = $y + 2; $l.Width = 92; $l.Height = 22; $l.TextAlign = 'MiddleLeft'
+        Set-DarkLabel $l; $f.Controls.Add($l)
+        $t = New-Object System.Windows.Forms.TextBox
+        $t.Left = 114; $t.Top = $y; $t.Width = 300; $t.Text = [string]$r[2]
+        Set-DarkInput $t; $f.Controls.Add($t); $tb[$r[1]] = $t
+        $y += 32
+    }
+    $lv = New-Object System.Windows.Forms.Label
+    $lv.Text = 'Вендор:'; $lv.Left = 16; $lv.Top = $y + 2; $lv.Width = 92; $lv.Height = 22; $lv.TextAlign = 'MiddleLeft'
+    Set-DarkLabel $lv; $f.Controls.Add($lv)
+    $cb = New-Object System.Windows.Forms.ComboBox
+    $cb.Left = 114; $cb.Top = $y; $cb.Width = 300; $cb.DropDownStyle = 'DropDownList'
+    $cb.BackColor = $script:Theme.ConsoleBg; $cb.ForeColor = $script:Theme.Text; $cb.FlatStyle = 'Flat'
+    [void]$cb.Items.AddRange(@('Dahua', 'Hikvision', 'Uniview', 'Свой путь'))
+    $cb.SelectedIndex = 0; $f.Controls.Add($cb); $y += 32
+
+    $lp = New-Object System.Windows.Forms.Label
+    $lp.Text = 'Путь:'; $lp.Left = 16; $lp.Top = $y + 2; $lp.Width = 92; $lp.Height = 22; $lp.TextAlign = 'MiddleLeft'
+    Set-DarkLabel $lp; $f.Controls.Add($lp)
+    $tPath = New-Object System.Windows.Forms.TextBox
+    $tPath.Left = 114; $tPath.Top = $y; $tPath.Width = 300; $tPath.Text = 'cam/realmonitor?channel=1&subtype=0'
+    Set-DarkInput $tPath; $f.Controls.Add($tPath); $y += 42
+
+    $presets = @{ 'Dahua' = 'cam/realmonitor?channel=1&subtype=0'; 'Hikvision' = 'Streaming/Channels/101'; 'Uniview' = 'unicast/c1/s0/live'; 'Свой путь' = '' }
+    $cb.Add_SelectedIndexChanged({ $v = [string]$presets[[string]$cb.SelectedItem]; if ($v) { $tPath.Text = $v } }.GetNewClosure())
+
+    $btn = New-Object System.Windows.Forms.Button
+    $btn.Text = 'Открыть в VLC'; $btn.Left = 114; $btn.Top = $y; $btn.Width = 150; $btn.Height = 30
+    Set-FlatButton $btn -Primary; $f.Controls.Add($btn)
+    $btn.Add_Click({
+        $vlc = Get-VlcPath
+        if (-not $vlc) {
+            [void][System.Windows.Forms.MessageBox]::Show('VLC не найден. Установи VLC в разделе «Программы».', 'RTSP', 'OK', 'Warning'); return
+        }
+        $ip = $tb['ip'].Text.Trim()
+        if (-not $ip) { return }
+        $auth = if ($tb['user'].Text) { "$($tb['user'].Text):$($tb['pass'].Text)@" } else { '' }
+        $path = $tPath.Text.TrimStart('/')
+        $port = $tb['port'].Text.Trim(); if (-not $port) { $port = '554' }
+        $url = "rtsp://$auth${ip}:$port/$path"
+        try { Start-Process $vlc -ArgumentList $url; $f.Close() }
+        catch { [void][System.Windows.Forms.MessageBox]::Show("Не удалось запустить VLC:`n$($_.Exception.Message)", 'RTSP', 'OK', 'Error') }
+    }.GetNewClosure())
+
+    [void]$f.ShowDialog(); $f.Dispose()
+}
+
 function Show-GuiNetworkScan {
     $f = New-Object System.Windows.Forms.Form
     $f.Text          = 'Сканер сети'
@@ -907,13 +966,17 @@ function Show-GuiNetworkScan {
     $suffix.Text = '.1-254'; $suffix.Left = 230; $suffix.Top = 12; $suffix.Width = 52; $suffix.Height = 23; $suffix.TextAlign = 'MiddleLeft'
     Set-DarkLabel $suffix
     $btnScan = New-Object System.Windows.Forms.Button
-    $btnScan.Text = 'Сканировать'; $btnScan.Left = 290; $btnScan.Top = 9; $btnScan.Width = 130; $btnScan.Height = 28
+    $btnScan.Text = 'Сканировать'; $btnScan.Left = 290; $btnScan.Top = 9; $btnScan.Width = 100; $btnScan.Height = 28
     Set-FlatButton $btnScan -Primary
     $btnDb = New-Object System.Windows.Forms.Button
-    $btnDb.Text = 'Обновить базу'; $btnDb.Left = 426; $btnDb.Top = 9; $btnDb.Width = 130; $btnDb.Height = 28
+    $btnDb.Text = 'Обновить базу'; $btnDb.Left = 396; $btnDb.Top = 9; $btnDb.Width = 110; $btnDb.Height = 28
     Set-FlatButton $btnDb
+    $btnRtsp = New-Object System.Windows.Forms.Button
+    $btnRtsp.Text = 'RTSP в VLC'; $btnRtsp.Left = 512; $btnRtsp.Top = 9; $btnRtsp.Width = 92; $btnRtsp.Height = 28
+    Set-FlatButton $btnRtsp
+    $btnRtsp.Add_Click({ Show-GuiRtsp -IP '' }.GetNewClosure())
     $status = New-Object System.Windows.Forms.Label
-    $status.Left = 564; $status.Top = 12; $status.Width = 220; $status.Height = 23; $status.TextAlign = 'MiddleLeft'
+    $status.Left = 610; $status.Top = 12; $status.Width = 170; $status.Height = 23; $status.TextAlign = 'MiddleLeft'
     $status.Anchor = 'Top, Left, Right'
     Set-DarkLabel $status
     # Принудительно перекачать базу вендоров (удобно скачать заранее в офисе).
@@ -932,7 +995,7 @@ function Show-GuiNetworkScan {
             $f.Cursor = [System.Windows.Forms.Cursors]::Default
         }
     }.GetNewClosure())
-    $bar.Controls.AddRange(@($lbl, $tb, $suffix, $btnScan, $btnDb, $status))
+    $bar.Controls.AddRange(@($lbl, $tb, $suffix, $btnScan, $btnDb, $btnRtsp, $status))
 
     $lv = New-Object System.Windows.Forms.ListView
     $lv.Dock = 'Fill'; $lv.View = 'Details'; $lv.FullRowSelect = $true
@@ -940,7 +1003,8 @@ function Show-GuiNetworkScan {
     [void]$lv.Columns.Add('IP', 150)
     [void]$lv.Columns.Add('MAC', 175)
     [void]$lv.Columns.Add('Вендор', 110)
-    [void]$lv.Columns.Add('Имя', 260)
+    [void]$lv.Columns.Add('Имя', 200)
+    [void]$lv.Columns.Add('Порты', 130)
 
     # Копирование: ПКМ — ячейка под курсором или вся строка; Ctrl+C — строка.
     $hit = @{ item = $null; sub = $null }
@@ -957,6 +1021,8 @@ function Show-GuiNetworkScan {
     $cm = New-Object System.Windows.Forms.ContextMenuStrip
     $miWeb = $cm.Items.Add('Открыть веб-интерфейс')
     $miWeb.Add_Click({ if ($hit.item) { Start-Process ('http://' + $hit.item.SubItems[0].Text) } }.GetNewClosure())
+    $miRtsp = $cm.Items.Add('Открыть RTSP в VLC')
+    $miRtsp.Add_Click({ if ($hit.item) { Show-GuiRtsp -IP $hit.item.SubItems[0].Text } }.GetNewClosure())
     [void]$cm.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
     $miCell = $cm.Items.Add('Копировать ячейку')
     $miCell.Add_Click({ if ($hit.sub) { & $copy $hit.sub.Text } }.GetNewClosure())
@@ -977,18 +1043,24 @@ function Show-GuiNetworkScan {
         $f.Refresh(); [System.Windows.Forms.Application]::DoEvents()
         try {
             $devs = Get-LanDevices -Base $base
+            $status.Text = 'Проверяю порты камер...'; $f.Refresh(); [System.Windows.Forms.Application]::DoEvents()
+            $portMap = Get-CameraPortMap -IPs @($devs.IP)
             $lv.BeginUpdate(); $lv.Items.Clear()
+            $camCount = 0
             foreach ($d in $devs) {
                 $it = New-Object System.Windows.Forms.ListViewItem($d.IP)
                 [void]$it.SubItems.Add($(if ($d.MAC) { $d.MAC } else { '—' }))
                 [void]$it.SubItems.Add($d.Vendor)
                 [void]$it.SubItems.Add($d.Name)
-                # Камеры (Dahua/Hikvision/Uniview/Axis) подсветим акцентом.
-                if (@('Dahua', 'Hikvision', 'Uniview', 'Axis') -contains $d.Vendor) { $it.ForeColor = $script:Theme.AccentText }
+                $ports = $portMap[$d.IP]
+                [void]$it.SubItems.Add($(if ($ports) { ($ports -join ',') } else { '' }))
+                # Камера: открыт RTSP(554) или вендор — известный камерный.
+                $isCam = ($ports -contains 554) -or (@('Dahua', 'Hikvision', 'Uniview', 'Axis') -contains $d.Vendor)
+                if ($isCam) { $it.ForeColor = $script:Theme.AccentText; $camCount++ }
                 [void]$lv.Items.Add($it)
             }
             $lv.EndUpdate()
-            $status.Text = "Найдено: $($devs.Count)"
+            $status.Text = "Найдено: $($devs.Count), камер: $camCount"
         } catch {
             $status.Text = 'Ошибка: ' + $_.Exception.Message
         } finally {

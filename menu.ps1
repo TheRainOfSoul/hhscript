@@ -71,7 +71,7 @@ $Programs = @(
     @{ Name = 'HiTools Delivery (Hikvision)'; Yadisk = 'https://disk.yandex.ru/d/3LJjK0CS-HZqwQ' }
     @{ Name = 'iVMS-4200 (Hikvision)'; Yadisk = 'https://disk.yandex.ru/d/U8nd7S3DwH8mtw' }
     # --- CCTV — прочие вендоры (winget / страница загрузки) ---
-    @{ Group = 'CCTV — прочие вендоры'; Name = 'ONVIF Device Manager (универсальный)'; Url = 'https://sourceforge.net/projects/onvifdm/' }
+    @{ Group = 'CCTV — прочие вендоры'; Name = 'ONVIF Device Manager (универсальный)'; Download = 'https://downloads.sourceforge.net/project/onvifdm/odm-v2.2.250r.msi'; File = 'odm-v2.2.250r.msi'; Url = 'https://sourceforge.net/projects/onvifdm/' }
     @{ Name = 'Reolink Client';       Winget = 'Reolink.Reolink';                 Url = 'https://reolink.com/software-and-manual/' }
     @{ Name = 'Uniview EZStation';    Url = 'https://global.uniview.com/Support/Download_Center/Tools/Software/' }
     @{ Name = 'EZVIZ Studio';         Url = 'https://www.ezviz.com/download' }
@@ -254,6 +254,48 @@ function Confirm-Winget {
     return $ok
 }
 
+# Уже установлен ли пакет winget (по id). $true — стоит (тогда пропускаем установку).
+function Test-WingetInstalled {
+    param([string]$Id)
+    try {
+        winget list --id $Id -e --accept-source-agreements *> $null
+        return ($LASTEXITCODE -eq 0)
+    } catch { return $false }
+}
+
+# Скачать файл по прямой ссылке (с учётом редиректов) в Downloads и запустить.
+# UA не браузерный: SourceForge и часть хостов отдают браузеру HTML-заглушку, а
+# curl/wget-подобному клиенту — сам файл. Имя из $Name либо из ответа сервера.
+function Get-DirectFile {
+    param([string]$Url, [string]$Name)
+    try {
+        $fname = $Name
+        if (-not $fname) {
+            try {
+                $req = [System.Net.HttpWebRequest]::Create($Url)
+                $req.AllowAutoRedirect = $true; $req.UserAgent = 'HHToolbox/1.0'; $req.Timeout = 30000
+                $resp = $req.GetResponse()
+                $cd = [string]$resp.Headers['Content-Disposition']
+                if ($cd -match 'filename\*?=(?:UTF-8'''')?"?([^";]+)"?') { $fname = [uri]::UnescapeDataString($Matches[1]) }
+                if (-not $fname) { $fname = [IO.Path]::GetFileName(([uri]$resp.ResponseUri.AbsoluteUri).AbsolutePath) }
+                $resp.Close()
+            } catch { $null = $_ }
+        }
+        if (-not $fname -or $fname -notmatch '\.\w{2,5}$') { $fname = 'hh-download.exe' }
+        $out = Join-Path ([Environment]::GetFolderPath('UserProfile')) "Downloads\$fname"
+        Write-Host "   Скачивание '$fname' (несколько секунд)..." -ForegroundColor DarkGray
+        $wc = New-Object System.Net.WebClient
+        $wc.Headers.Add('User-Agent', 'HHToolbox/1.0')
+        try { $wc.DownloadFile($Url, $out) } finally { $wc.Dispose() }
+        Write-Host "   Сохранено: $out — запускаю." -ForegroundColor Green
+        Start-Process $out
+        return $true
+    } catch {
+        Write-Host "   Ошибка прямой загрузки: $($_.Exception.Message)" -ForegroundColor Red
+        return $false
+    }
+}
+
 # Ярлыки приложений (меню Пуск + рабочий стол, для всех и для текущего юзера).
 # Снимок до установки + снимок после = появившийся ярлык, который и запускаем.
 function Get-AppShortcuts {
@@ -302,6 +344,12 @@ function Install-Item {
         Write-Host "`n   '$($p.Name)' — загрузка с Яндекс.Диска..." -ForegroundColor Green
         return (Get-YadiskFile -PublicUrl $p.Yadisk -Name $p.File)
     }
+    if ($p.Download) {
+        Write-Host "`n   '$($p.Name)' — прямая загрузка..." -ForegroundColor Green
+        if (Get-DirectFile -Url $p.Download -Name $p.File) { return $true }
+        if ($p.Url) { Write-Host "   Прямая ссылка не сработала — открываю страницу." -ForegroundColor Yellow; Start-Process $p.Url; return $true }
+        return $false
+    }
     if ($p.Layout) { return (Install-KbLayout -ZipUrl $p.Layout -Name $p.Name) }
     $ids = if ($p.WingetList) { $p.WingetList } elseif ($p.Winget) { @($p.Winget) } else { @() }
     if ($ids.Count -and (Confirm-Winget)) {
@@ -309,13 +357,23 @@ function Install-Item {
         $before = Get-AppShortcuts
         Write-Host "`n   Установка '$($p.Name)'..." -ForegroundColor Green
         foreach ($id in $ids) {
+            if (Test-WingetInstalled $id) {
+                Write-Host "    уже установлено: $id — пропускаю" -ForegroundColor DarkGray
+                continue
+            }
             Write-Host "    winget: $id" -ForegroundColor DarkGray
             winget install --id $id -e --source winget --accept-package-agreements --accept-source-agreements
             if ($LASTEXITCODE -ne 0) { $ok = $false }
         }
         # после установки открыть появившееся приложение (ярлык, которого не было)
-        if ($ok) { Start-NewApp -Before $before -Name $p.Name }
-        return $ok
+        if ($ok) { Start-NewApp -Before $before -Name $p.Name; return $true }
+        # winget не смог — если есть страница загрузки, открываем её (а не тихий провал)
+        if ($p.Url) {
+            Write-Host "   winget не справился — открываю страницу загрузки '$($p.Name)'." -ForegroundColor Yellow
+            Start-Process $p.Url
+            return $true
+        }
+        return $false
     }
     if ($p.Url) {
         Write-Host "`n   Открываю страницу загрузки '$($p.Name)' в браузере..." -ForegroundColor Yellow
@@ -1768,6 +1826,46 @@ function Get-LanDevices {
         $m = [string]$mac[$ip]
         [pscustomobject]@{ IP = $ip; MAC = $m; Vendor = (Get-MacVendor $m); Name = [string]$name[$ip] }
     }
+}
+
+# Типичные порты камер/регистраторов: веб, RTSP, вендорские (Dahua 37777, Hik 8000,
+# XMeye/дешёвые 34567, Dahua HTTP 8899, альт-веб 88).
+$script:CameraPorts = @(80, 443, 554, 8000, 37777, 34567, 8899, 88)
+
+# Проба портов камер по списку IP одним параллельным заходом (без nmap, чистый .NET).
+# Возвращает хэш: IP -> отсортированный массив открытых портов.
+function Get-CameraPortMap {
+    param([string[]]$IPs, [int]$TimeoutMs = 700)
+    $probes = @()
+    foreach ($ip in $IPs) {
+        foreach ($port in $script:CameraPorts) {
+            $c = New-Object System.Net.Sockets.TcpClient
+            try { $probes += [pscustomobject]@{ IP = $ip; Port = $port; C = $c; AR = $c.BeginConnect($ip, $port, $null, $null) } }
+            catch { $c.Close() }
+        }
+    }
+    Start-Sleep -Milliseconds $TimeoutMs
+    $map = @{}
+    foreach ($x in $probes) {
+        try { if ($x.AR.IsCompleted) { $x.C.EndConnect($x.AR); if (-not $map[$x.IP]) { $map[$x.IP] = @() } $map[$x.IP] += $x.Port } }
+        catch { $null = $_ }
+        $x.C.Close()
+    }
+    foreach ($k in @($map.Keys)) { $map[$k] = @($map[$k] | Sort-Object) }
+    return $map
+}
+
+# Путь к vlc.exe (Program Files / реестр / PATH), иначе $null.
+function Get-VlcPath {
+    foreach ($c in @((Join-Path $env:ProgramFiles 'VideoLAN\VLC\vlc.exe'), (Join-Path ${env:ProgramFiles(x86)} 'VideoLAN\VLC\vlc.exe'))) {
+        if ($c -and (Test-Path $c)) { return $c }
+    }
+    foreach ($k in 'HKLM:\SOFTWARE\VideoLAN\VLC', 'HKLM:\SOFTWARE\WOW6432Node\VideoLAN\VLC') {
+        try { $d = (Get-ItemProperty $k -ErrorAction Stop).InstallDir; if ($d) { $p = Join-Path $d 'vlc.exe'; if (Test-Path $p) { return $p } } } catch { $null = $_ }
+    }
+    $g = Get-Command vlc.exe -ErrorAction SilentlyContinue
+    if ($g) { return $g.Source }
+    return $null
 }
 
 # CLI-версия сканера (в GUI подменяется окном Show-GuiNetworkScan).
