@@ -5,6 +5,10 @@
 # Весь ввод из /dev/tty, т.к. при "curl | bash" stdin занят самим скриптом.
 
 VERSION="1.0"
+LOG="${HOME:-/root}/.hhtoolbox.log"
+
+# журнал действий (аудит на сервере клиента): время + сообщение в ~/.hhtoolbox.log
+log() { printf '%s  %s\n' "$(date '+%F %T')" "$*" >>"$LOG" 2>/dev/null || true; }
 
 # --- защита от sh и от неинтерактивного запуска ---------------------------
 if [ -z "${BASH_VERSION:-}" ]; then
@@ -52,6 +56,7 @@ ensure_pkg() {
   local p=$1
   dpkg -s "$p" >/dev/null 2>&1 && return 0
   ui_msg "Ставлю пакет: $p"
+  log "apt install: $p"
   $SUDO apt-get update -qq && $SUDO apt-get install -y "$p"
 }
 
@@ -295,6 +300,7 @@ CMDS=(
   "Память@@free -h"
   "Аптайм и нагрузка@@uptime"
   "Версия ОС и ядра@@{ . /etc/os-release; echo \"\$PRETTY_NAME\"; uname -a; }"
+  "Журнал действий HH Toolbox@@tail -n 100 \"\$LOG\" 2>/dev/null || echo 'журнал пуст'"
 )
 
 # ===========================================================================
@@ -343,6 +349,7 @@ sec_install() {
   [ "${#pkgs[@]}" -gt 0 ] || { ui_msg "Ничего не выбрано."; pause; return; }
   ui_msg "Будут установлены:" "${pkgs[*]}"
   ui_yesno "Установить сейчас?" || { pause; return; }
+  log "установка пакетов: ${pkgs[*]}"
   $SUDO apt-get update
   $SUDO apt-get install -y "${pkgs[@]}"
   ui_msg "Готово."
@@ -355,7 +362,7 @@ sec_tweaks() {
   [ -n "$sel" ] || { ui_msg "Ничего не выбрано."; pause; return; }
   while IFS= read -r t; do
     [ -n "$t" ] || continue
-    if declare -F "tw_$t" >/dev/null; then "tw_$t"; fi
+    if declare -F "tw_$t" >/dev/null; then log "твик: $t"; "tw_$t"; fi
   done <<< "$sel"
   ui_msg "Твики применены."
   pause
@@ -459,6 +466,7 @@ tw_ssh_harden() {
   printf 'PermitRootLogin no\nPasswordAuthentication no\nKbdInteractiveAuthentication no\n' \
     | $SUDO tee "$f" >/dev/null
   $SUDO systemctl restart ssh 2>/dev/null || $SUDO systemctl restart sshd 2>/dev/null
+  log "SSH хардненинг применён (только по ключу)"
   ui_msg "SSH усилён. Проверь новый вход в ОТДЕЛЬНОЙ сессии, прежде чем закрыть текущую!"
 }
 
@@ -931,6 +939,7 @@ usr_sshport() {
     $SUDO sed -i "s/^#\?Port .*/Port $p/" /etc/ssh/sshd_config
   fi
   $SUDO systemctl restart ssh 2>/dev/null || $SUDO systemctl restart sshd 2>/dev/null
+  log "порт SSH изменён -> $p"
   ui_msg "SSH теперь на порту $p. Проверь из НОВОГО окна:  ssh -p $p пользователь@хост"
   pause
 }
@@ -1051,7 +1060,7 @@ YAML
     "Только записать, не применять") || return
   case "$how" in
     "netplan try"*)   $SUDO netplan try </dev/tty ;;
-    "netplan apply"*) $SUDO netplan apply && ui_msg "Применено. Новый адрес: $ip" ;;
+    "netplan apply"*) log "статический IP $ip на $nic (шлюз $gw)"; $SUDO netplan apply && ui_msg "Применено. Новый адрес: $ip" ;;
     *) ui_msg "Конфиг записан в $f, не применён." ;;
   esac
   pause
@@ -1800,6 +1809,7 @@ main() {
   require_tty
   require_apt
   init_sudo
+  log "=== старт HH Toolbox Linux v$VERSION (пользователь $(id -un)) ==="
   ensure_ui
   banner
   local pick
@@ -1818,6 +1828,7 @@ main() {
       "Обслуживание и мониторинг" \
       "Справочник команд" \
       "Выход") || break
+    [ -n "$pick" ] && [ "$pick" != "Выход" ] && log "раздел: $pick"
     case "$pick" in
       "Информация о системе и сеть") sec_sysinfo ;;
       "Установка программ (галочки)") sec_install ;;
