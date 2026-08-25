@@ -1901,14 +1901,25 @@ function Get-LanBase {
 
 # Просканировать /24 и вернуть устройства: IP / MAC / Vendor / Name.
 function Get-LanDevices {
-    param([string]$Base)
+    param([string]$Base, [scriptblock]$Progress)
     if (-not $Base) { $Base = Get-LanBase }
     $Base = $Base.Trim().TrimEnd('.')
     # 1) асинхронный ping всех адресов — находит живых и наполняет ARP-кэш.
     $pings = 1..254 | ForEach-Object {
         [pscustomobject]@{ IP = "$Base.$_"; Task = (New-Object System.Net.NetworkInformation.Ping).SendPingAsync("$Base.$_", 500) }
     }
-    try { [System.Threading.Tasks.Task]::WaitAll(@($pings.Task), 4000) | Out-Null } catch { $null = $_ }
+    if ($Progress) {
+        # Опрос с обратным вызовом (GUI пампит DoEvents) — окно не «висит».
+        $deadline = [DateTime]::UtcNow.AddMilliseconds(4000)
+        while ([DateTime]::UtcNow -lt $deadline) {
+            $done = @($pings.Task | Where-Object IsCompleted).Count
+            try { & $Progress "Пинг подсети: $done / 254" } catch { $null = $_ }
+            if ($done -ge 254) { break }
+            Start-Sleep -Milliseconds 120
+        }
+    } else {
+        try { [System.Threading.Tasks.Task]::WaitAll(@($pings.Task), 4000) | Out-Null } catch { $null = $_ }
+    }
     $alive = New-Object System.Collections.Generic.HashSet[string]
     foreach ($x in $pings) {
         try { if ($x.Task.Status -eq 'RanToCompletion' -and $x.Task.Result.Status -eq 'Success') { [void]$alive.Add($x.IP) } } catch { $null = $_ }
@@ -1941,7 +1952,17 @@ function Get-LanDevices {
     if (-not $ips) { return @() }
     # 4) обратный DNS — асинхронно, общий лимит ~1.5с (кто не успел — без имени).
     $dns = foreach ($ip in $ips) { [pscustomobject]@{ IP = $ip; Task = [System.Net.Dns]::GetHostEntryAsync($ip) } }
-    try { [System.Threading.Tasks.Task]::WaitAll(@($dns.Task), 1500) | Out-Null } catch { $null = $_ }
+    if ($Progress) {
+        $ddl = [DateTime]::UtcNow.AddMilliseconds(1500)
+        while ([DateTime]::UtcNow -lt $ddl) {
+            $done = @($dns.Task | Where-Object IsCompleted).Count
+            try { & $Progress "Определяю имена: $done / $(@($dns).Count)" } catch { $null = $_ }
+            if ($done -ge @($dns).Count) { break }
+            Start-Sleep -Milliseconds 120
+        }
+    } else {
+        try { [System.Threading.Tasks.Task]::WaitAll(@($dns.Task), 1500) | Out-Null } catch { $null = $_ }
+    }
     $name = @{}
     foreach ($d in $dns) { try { if ($d.Task.Status -eq 'RanToCompletion') { $name[$d.IP] = $d.Task.Result.HostName } } catch { $null = $_ } }
     foreach ($ip in $ips) {
@@ -1957,7 +1978,7 @@ $script:CameraPorts = @(80, 443, 554, 8000, 37777, 34567, 8899, 88)
 # Проба портов камер по списку IP одним параллельным заходом (без nmap, чистый .NET).
 # Возвращает хэш: IP -> отсортированный массив открытых портов.
 function Get-CameraPortMap {
-    param([string[]]$IPs, [int]$TimeoutMs = 700)
+    param([string[]]$IPs, [int]$TimeoutMs = 700, [scriptblock]$Progress)
     $probes = @()
     foreach ($ip in $IPs) {
         foreach ($port in $script:CameraPorts) {
@@ -1966,7 +1987,12 @@ function Get-CameraPortMap {
             catch { $c.Close() }
         }
     }
-    Start-Sleep -Milliseconds $TimeoutMs
+    if ($Progress) {
+        $ddl = [DateTime]::UtcNow.AddMilliseconds($TimeoutMs)
+        while ([DateTime]::UtcNow -lt $ddl) { try { & $Progress 'Проверяю порты камер...' } catch { $null = $_ }; Start-Sleep -Milliseconds 120 }
+    } else {
+        Start-Sleep -Milliseconds $TimeoutMs
+    }
     $map = @{}
     foreach ($x in $probes) {
         try { if ($x.AR.IsCompleted) { $x.C.EndConnect($x.AR); if (-not $map[$x.IP]) { $map[$x.IP] = @() } $map[$x.IP] += $x.Port } }

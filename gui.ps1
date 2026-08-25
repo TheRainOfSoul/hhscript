@@ -1079,13 +1079,14 @@ function Show-GuiNetworkScan {
     $btnScan.Add_Click({
         $base = $tb.Text.Trim()
         $status.Text = "Сканирую $base.1-254 ..."
-        $btnScan.Enabled = $false
+        $btnScan.Enabled = $false; $btnDb.Enabled = $false; $btnRtsp.Enabled = $false
         $f.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
         $f.Refresh(); [System.Windows.Forms.Application]::DoEvents()
         try {
-            $devs = Get-LanDevices -Base $base
-            $status.Text = 'Проверяю порты камер...'; $f.Refresh(); [System.Windows.Forms.Application]::DoEvents()
-            $portMap = Get-CameraPortMap -IPs @($devs.IP)
+            # Прогресс-колбэк пампит DoEvents — окно остаётся отзывчивым во время скана.
+            $prog = { param($m) $status.Text = $m; [System.Windows.Forms.Application]::DoEvents() }.GetNewClosure()
+            $devs = Get-LanDevices -Base $base -Progress $prog
+            $portMap = Get-CameraPortMap -IPs @($devs.IP) -Progress $prog
             $lv.BeginUpdate(); $lv.Items.Clear()
             $camCount = 0
             foreach ($d in $devs) {
@@ -1105,7 +1106,7 @@ function Show-GuiNetworkScan {
         } catch {
             $status.Text = 'Ошибка: ' + $_.Exception.Message
         } finally {
-            $btnScan.Enabled = $true
+            $btnScan.Enabled = $true; $btnDb.Enabled = $true; $btnRtsp.Enabled = $true
             $f.Cursor = [System.Windows.Forms.Cursors]::Default
         }
     }.GetNewClosure())
