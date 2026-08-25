@@ -470,6 +470,7 @@ sec_netdiag() {
   local pick
   while :; do
     pick=$(ui_menu "Диагностика сети" \
+      "Network Doctor — почему не работает сеть" \
       "Пинг-скан подсети (живые хосты)" \
       "Скан камер/NVR (порты CCTV)" \
       "Проверка RTSP-порта камеры" \
@@ -478,6 +479,7 @@ sec_netdiag() {
       "speedtest — скорость до интернета" \
       "← Назад") || return
     case "$pick" in
+      "Network Doctor"*) nd_doctor ;;
       "Пинг-скан"*)  nd_pingscan ;;
       "Скан камер"*) nd_camscan ;;
       "Проверка RTSP"*) nd_rtsp ;;
@@ -487,6 +489,95 @@ sec_netdiag() {
       *) return ;;
     esac
   done
+}
+
+# строка отчёта: ok/bad/warn + подпись + деталь
+dl() {
+  local m
+  case "$1" in ok) m='[OK]' ;; bad) m='[!!]' ;; warn) m='[~]' ;; esac
+  printf '  %-4s %s\n' "$m" "$2" >/dev/tty
+  [ -n "${3:-}" ] && printf '        %s\n' "$3" >/dev/tty
+  return 0
+}
+
+# Network Doctor: батарея read-only проверок «почему не работает сеть» + вердикт.
+nd_doctor() {
+  command -v ping >/dev/null 2>&1 || ensure_pkg iputils-ping >/dev/null 2>&1 || true
+  local verdict='' dev gw ip dns pub ups o loss ipdead=0 gwok=0 netok=0 tgt
+  printf '\n=== Network Doctor — диагностика сети ===\n\n' >/dev/tty
+
+  # 1) линк
+  ups=$(ip -br link 2>/dev/null | awk '$1!="lo" && $2=="UP"{print $1}' | paste -sd', ' -)
+  if [ -n "$ups" ]; then
+    dl ok "Сетевой интерфейс активен" "$ups"
+  else
+    dl bad "Нет активных интерфейсов" "Кабель не подключён или адаптер выключен."
+    printf '\n  → Нет физического подключения.\n' >/dev/tty; pause; return
+  fi
+
+  # 2) IP / шлюз / DNS
+  dev=$(ip route 2>/dev/null | awk '/default/{print $5; exit}')
+  gw=$(ip route 2>/dev/null | awk '/default/{print $3; exit}')
+  ip=$(ip -o -f inet addr show "$dev" 2>/dev/null | awk '{print $4; exit}')
+  dns=$(grep -h '^nameserver' /etc/resolv.conf 2>/dev/null | awk '{print $2}' | paste -sd', ' -)
+  if [ -z "$ip" ]; then
+    dl bad "Нет IPv4-адреса" "Адаптер активен, но адрес не назначен."
+    verdict+=$'\n  → Нет IP — DHCP не выдал. Проверь DHCP на роутере или задай статику.'; ipdead=1
+  elif printf '%s' "$ip" | grep -q '^169\.254\.'; then
+    dl bad "APIPA-адрес $ip" "DHCP не ответил (169.254.x.x)."
+    verdict+=$'\n  → ПК не получил IP от DHCP. Проверь кабель до роутера / DHCP-сервер.'; ipdead=1
+  else
+    dl ok "IPv4-адрес: $ip" "Шлюз: ${gw:-нет}; DNS: ${dns:-нет}"
+  fi
+
+  # 3) шлюз
+  if [ -n "$gw" ] && [ "$ipdead" = 0 ]; then
+    if o=$(ping -c3 -W1 "$gw" 2>/dev/null); then
+      gwok=1; loss=$(printf '%s' "$o" | grep -oE '[0-9]+% packet loss' | head -1)
+      dl ok "Шлюз $gw отвечает" "$loss"
+    else
+      dl bad "Шлюз $gw не отвечает" "Роутер/локальная сеть недоступны."
+      verdict+=$'\n  → Шлюз недоступен — проблема в локальной сети или роутере.'
+    fi
+  fi
+
+  # 4) интернет (ICMP)
+  if [ "$ipdead" = 0 ]; then
+    for tgt in 1.1.1.1 8.8.8.8; do
+      if o=$(ping -c3 -W1 "$tgt" 2>/dev/null); then
+        netok=1; loss=$(printf '%s' "$o" | grep -oE '[0-9]+% packet loss' | head -1)
+        dl ok "Интернет доступен ($tgt)" "$loss"; break
+      fi
+    done
+    if [ "$netok" = 0 ]; then
+      dl bad "Интернет недоступен (ICMP)" "Пинг до 1.1.1.1 и 8.8.8.8 не прошёл."
+      [ "$gwok" = 1 ] && verdict+=$'\n  → Локальная сеть ок, но нет выхода в интернет — провайдер/роутер (WAN).'
+    fi
+  fi
+
+  # 5) DNS-резолвинг
+  if [ "$ipdead" = 0 ]; then
+    if getent hosts cloudflare.com >/dev/null 2>&1; then
+      dl ok "DNS резолвит имена" "cloudflare.com → адрес получен."
+    else
+      dl bad "DNS не резолвит имена" "Имена сайтов не преобразуются в адреса."
+      [ "$netok" = 1 ] && verdict+=$'\n  → Интернет есть, но DNS не работает — смени DNS на 1.1.1.1 / 8.8.8.8.'
+    fi
+  fi
+
+  # 6) внешний IP
+  if [ "$netok" = 1 ]; then
+    pub=$(fetch - https://api.ipify.org 2>/dev/null)
+    [ -n "$pub" ] && dl ok "Внешний IP: $pub" "Полный доступ к интернету подтверждён."
+  fi
+
+  printf '\n' >/dev/tty
+  if [ -n "$verdict" ]; then
+    printf '  Итог:%s\n' "$verdict" >/dev/tty
+  else
+    printf '  → Сеть работает нормально: интерфейс, IP, шлюз, интернет и DNS в порядке.\n' >/dev/tty
+  fi
+  pause
 }
 
 nd_pingscan() {

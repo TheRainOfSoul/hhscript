@@ -55,7 +55,9 @@ curl -fsSL https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/linux.s
   отмонтирование, разметка и форматирование нового диска в ext4 (системный
   диск заблокирован, подтверждение вводом имени устройства), анализ занятого
   места, **Samba-шара** для Windows и **NFS-экспорт** для Linux.
-- **Диагностика сети** — пинг-скан подсети, скан камер/NVR по портам CCTV
+- **Диагностика сети** — **Network Doctor** (диагноз «почему не работает сеть»:
+  интерфейс → IP/APIPA → шлюз → интернет → DNS → внешний IP с готовым вердиктом),
+  пинг-скан подсети, скан камер/NVR по портам CCTV
   (80/443/554/8000/37777/34567/8899/88), проверка RTSP-порта (+`ffprobe`),
   `mtr`, `iperf3` (сервер/клиент), `speedtest`.
 - **Docker и сервисы** — установка Docker+compose и деплой готовых стеков
@@ -90,10 +92,14 @@ curl -fsSL https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/linux.s
   (удаление лишних приложений + TEMP + DNS) · Базовые твики
   (расширения файлов, тёмная тема, классическое меню Win11) ·
   **Сетевые утилиты** (ipconfig, ping/tracert, смена DNS на 1.1.1.1 / 8.8.8.8 /
-  авто, сброс сети) — всё inline, без тяжёлых внешних утилит. Чистка и твики —
-  с выбором пунктов **галочками** (↑/↓ навигация, Пробел — отметить, A — все,
-  Enter — применить, Esc — отмена; резервный режим — ввод номеров)
-- **Программы:** единый чек-лист установки **галочками** (57 шт., CLI+GUI):
+  авто, сброс сети) · **Network Doctor** (диагноз «почему не работает сеть»:
+  адаптер → IP/APIPA → шлюз → интернет → DNS → внешний IP с готовым вердиктом) ·
+  **Сканер сети** (находит камеры/устройства: вендор по MAC, проба портов камер
+  с пометкой RTSP, веб-интерфейс и **RTSP в VLC** по клику, сортировка колонок,
+  живой прогресс без зависания окна) — всё inline, без тяжёлых внешних утилит.
+  Чистка и твики — с выбором пунктов **галочками** (↑/↓ навигация, Пробел —
+  отметить, A — все, Enter — применить, Esc — отмена; резервный режим — ввод номеров)
+- **Программы:** единый чек-лист установки **галочками** (61 шт., CLI+GUI):
   браузер/архиватор (Chrome, 7-Zip, VLC, qBittorrent, Notepad++), удалёнка
   (AnyDesk, TightVNC, mRemoteNG, MobaXterm, **RustDesk, TeamViewer, Tailscale,
   WireGuard, UltraVNC**), сеть (Advanced/Angry IP Scanner,
@@ -106,7 +112,11 @@ curl -fsSL https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/linux.s
   оболочка (PowerShell 7, Windows Terminal) — через `winget`; плюс CCTV (Dahua
   ConfigTool/SmartPSS, Hikvision SADP/HiTools Delivery/iVMS-4200 — авто-загрузка
   с Я.Диска; **ONVIF Device Manager, Reolink, Uniview EZStation, EZVIZ, Amcrest**
-  — через winget/страницу загрузки). Отдельный пункт **«Обновить весь софт»** (`winget upgrade --all`)
+  — через winget/страницу загрузки), офис/документы (**ABBYY FineReader PDF 16,
+  Adobe Acrobat Pro DC, Adobe InDesign, WinRAR** — авто-загрузка с Я.Диска).
+  Установленное через winget **запускается сразу после установки**; повторно
+  стоящее пропускается; при сбое winget открывается страница загрузки. Отдельный
+  пункт **«Обновить весь софт»** (`winget upgrade --all`)
 - **[8] Библиотеки и среды выполнения** — чек-лист runtime (по умолчанию всё
   отмечено): Visual C++ Redist (все 2005-2022, x86+x64), .NET Desktop Runtime 8/6,
   .NET Framework 3.5 (DISM), DirectX, Edge WebView2, Windows App Runtime,

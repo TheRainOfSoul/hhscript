@@ -94,6 +94,11 @@ $Programs = @(
     @{ Name = 'WinDirStat (диск)';    Winget = 'WinDirStat.WinDirStat';           Url = 'https://windirstat.net/' }
     @{ Name = 'WinMerge (сравнение)'; Winget = 'WinMerge.WinMerge';               Url = 'https://winmerge.org/downloads/' }
     @{ Name = 'Bitwarden (пароли)';   Winget = 'Bitwarden.Bitwarden';             Url = 'https://bitwarden.com/download/' }
+    # --- Офис / документы (авто-загрузка с Я.Диска) ---
+    @{ Group = 'Офис / документы'; Name = 'ABBYY FineReader PDF 16'; Yadisk = 'https://disk.yandex.ru/d/6ANLBOXkPqeqrw' }
+    @{ Name = 'Adobe Acrobat Pro DC 2022'; Yadisk = 'https://disk.yandex.ru/d/N3nz_ic4YdvPSQ' }
+    @{ Name = 'Adobe InDesign 2022';       Yadisk = 'https://disk.yandex.ru/d/eHwWiyfCtmTt-g' }
+    @{ Name = 'WinRAR 5.50 (RU)';          Yadisk = 'https://disk.yandex.ru/d/p8ljN-9lJhWEVw' }
     # --- Раскладки клавиатуры (MSKLC, фонетические, из репозитория) ---
     @{ Group = 'Раскладки клавиатуры'; Name = 'Русская фонетическая раскладка';  Layout = 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/layouts/RussianPhonetic.zip' }
     @{ Name = 'Армянская фонетическая раскладка'; Layout = 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/layouts/ArmenianPhonetic.zip' }
