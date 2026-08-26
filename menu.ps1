@@ -2016,6 +2016,36 @@ function Get-CameraPortMap {
     return $map
 }
 
+# Пресеты путей камер по вендору. Snapshot — HTTP-кадр JPEG (для встроенного
+# предпросмотра, порт обычно 80); Rtsp — путь потока (порт 554). Пустая строка =
+# вписать вручную (у вендора нестандартный путь). Пути проверены на массовых
+# моделях Dahua/Hikvision.
+$script:CamPresets = @{
+    'Dahua'     = @{ Snapshot = 'cgi-bin/snapshot.cgi?channel=1';        Rtsp = 'cam/realmonitor?channel=1&subtype=0' }
+    'Hikvision' = @{ Snapshot = 'ISAPI/Streaming/channels/101/picture';  Rtsp = 'Streaming/Channels/101' }
+    'Uniview'   = @{ Snapshot = '';                                      Rtsp = 'unicast/c1/s0/live' }
+    'Свой путь' = @{ Snapshot = '';                                      Rtsp = '' }
+}
+
+# Путь камеры по вендору и виду ('Snapshot'|'Rtsp'). Неизвестный вендор -> ''.
+function Get-CamPreset {
+    param([string]$Vendor, [string]$Kind)
+    $v = $script:CamPresets[$Vendor]
+    if ($v) { return [string]$v[$Kind] }
+    return ''
+}
+
+# Собрать URL камеры. Логин/пароль экранируем (у камер пароли вида Admin#123 —
+# символы @ : / # ? ломают URL). Пустой $User -> без учётки в URL (для HTTP-
+# снапшота, где авторизация идёт через Digest в заголовке, а не в адресе).
+function New-CamUrl {
+    param([string]$Scheme, [string]$IP, [int]$Port, [string]$User, [string]$Pass, [string]$Path)
+    $auth = ''
+    if ($User) { $auth = "$([Uri]::EscapeDataString($User)):$([Uri]::EscapeDataString($Pass))@" }
+    $p = ([string]$Path).TrimStart('/')
+    return "${Scheme}://${auth}${IP}:${Port}/${p}"
+}
+
 # Путь к vlc.exe (Program Files / реестр / PATH), иначе $null.
 function Get-VlcPath {
     $cand = @()

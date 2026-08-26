@@ -908,66 +908,175 @@ function Show-GuiNetwork {
 #  2c. Сканер сети — окно со списком найденных устройств.
 #  Считает теми же Get-LanBase / Get-LanDevices из menu.ps1.
 # =====================================================================
+# Снимок кадра с камеры по HTTP (JPEG). Ничего не качаем: Windows рисует JPEG сам.
+# Авторизация Digest/Basic — через заголовок (не в URL). Возвращает независимый
+# Bitmap (копия, чтобы можно было закрыть поток), кидает исключение при ошибке.
+function Get-CamSnapshot {
+    param([string]$Url, [string]$User, [string]$Pass, [int]$TimeoutMs = 2500)
+    $req = [System.Net.HttpWebRequest]::Create($Url)
+    $req.Timeout = $TimeoutMs; $req.ReadWriteTimeout = $TimeoutMs
+    $req.UserAgent = 'HHToolbox/1.0'; $req.AllowAutoRedirect = $true
+    if ($User) {
+        $u = [Uri]$Url
+        $cc = New-Object System.Net.CredentialCache
+        $nc = New-Object System.Net.NetworkCredential($User, $Pass)
+        foreach ($s in 'Digest', 'Basic') { try { $cc.Add($u, $s, $nc) } catch { $null = $_ } }
+        $req.Credentials = $cc
+    }
+    $resp = $req.GetResponse()
+    try {
+        $ms = New-Object System.IO.MemoryStream
+        $resp.GetResponseStream().CopyTo($ms); $ms.Position = 0
+        $img = [System.Drawing.Image]::FromStream($ms)
+        $bmp = New-Object System.Drawing.Bitmap $img   # копия: далее поток закроем
+        $img.Dispose(); $ms.Dispose()
+        return $bmp
+    } finally { $resp.Close() }
+}
+
+# Окно просмотра камеры: встроенный предпросмотр по HTTP-снапшоту (кадр раз в ~1с,
+# без скачивания плеера). Для камер без веб-снапшота — кнопка «RTSP-ссылка».
 function Show-GuiRtsp {
     param([string]$IP)
     $f = New-Object System.Windows.Forms.Form
-    $f.Text = 'RTSP-поток в VLC'
-    $f.Size = New-Object System.Drawing.Size(452, 330)
-    $f.FormBorderStyle = 'FixedDialog'; $f.MaximizeBox = $false; $f.MinimizeBox = $false; $f.StartPosition = 'CenterParent'
+    $f.Text = 'Просмотр камеры'
+    $f.Size = New-Object System.Drawing.Size(660, 640)
+    $f.MinimumSize = New-Object System.Drawing.Size(520, 480)
+    $f.StartPosition = 'CenterParent'
     Initialize-DarkForm $f
 
-    $tb = @{}
-    $y = 18
-    foreach ($r in @(@('IP камеры:', 'ip', [string]$IP), @('Логин:', 'user', 'admin'), @('Пароль:', 'pass', ''), @('Порт:', 'port', '554'))) {
+    # --- статус (низ) ---
+    $status = New-Object System.Windows.Forms.Label
+    $status.Dock = 'Bottom'; $status.Height = 26; $status.TextAlign = 'MiddleLeft'
+    $status.Text = 'впиши IP/логин/пароль и нажми «Смотреть»'
+    Set-DarkLabel $status; $status.ForeColor = $script:Theme.TextDim
+    $f.Controls.Add($status)
+
+    # --- поля (верх) ---
+    $top = New-Object System.Windows.Forms.Panel
+    $top.Dock = 'Top'; $top.Height = 196; $top.BackColor = $script:Theme.Bg
+    $f.Controls.Add($top)
+
+    $mkLabel = {
+        param($text, $x, $y, $w)
         $l = New-Object System.Windows.Forms.Label
-        $l.Text = $r[0]; $l.Left = 16; $l.Top = $y + 2; $l.Width = 92; $l.Height = 22; $l.TextAlign = 'MiddleLeft'
-        Set-DarkLabel $l; $f.Controls.Add($l)
-        $t = New-Object System.Windows.Forms.TextBox
-        $t.Left = 114; $t.Top = $y; $t.Width = 300; $t.Text = [string]$r[2]
-        Set-DarkInput $t; $f.Controls.Add($t); $tb[$r[1]] = $t
-        $y += 32
+        $l.Text = $text; $l.Left = $x; $l.Top = $y + 3; $l.Width = $w; $l.Height = 22; $l.TextAlign = 'MiddleLeft'
+        Set-DarkLabel $l; $top.Controls.Add($l)
     }
-    $lv = New-Object System.Windows.Forms.Label
-    $lv.Text = 'Вендор:'; $lv.Left = 16; $lv.Top = $y + 2; $lv.Width = 92; $lv.Height = 22; $lv.TextAlign = 'MiddleLeft'
-    Set-DarkLabel $lv; $f.Controls.Add($lv)
+    $mkInput = {
+        param($x, $y, $w, $val)
+        $t = New-Object System.Windows.Forms.TextBox
+        $t.Left = $x; $t.Top = $y; $t.Width = $w; $t.Text = [string]$val
+        Set-DarkInput $t; $top.Controls.Add($t); $t
+    }
+
+    & $mkLabel 'IP камеры:' 12 12 92;  $tbIp   = & $mkInput 108 12 200 ([string]$IP)
+    & $mkLabel 'Логин:'     12 44 92;  $tbUser = & $mkInput 108 44 200 'admin'
+    & $mkLabel 'Пароль:'    12 76 92;  $tbPass = & $mkInput 108 76 200 ''
+    & $mkLabel 'Порт (HTTP):' 330 12 96; $tbPort = & $mkInput 430 12 80 '80'
+    & $mkLabel 'Вендор:'    330 44 96
     $cb = New-Object System.Windows.Forms.ComboBox
-    $cb.Left = 114; $cb.Top = $y; $cb.Width = 300; $cb.DropDownStyle = 'DropDownList'
+    $cb.Left = 430; $cb.Top = 44; $cb.Width = 200; $cb.DropDownStyle = 'DropDownList'
     Set-DarkInput $cb
     [void]$cb.Items.AddRange(@('Dahua', 'Hikvision', 'Uniview', 'Свой путь'))
-    $cb.SelectedIndex = 0; $f.Controls.Add($cb); $y += 32
+    $top.Controls.Add($cb)
 
-    $lp = New-Object System.Windows.Forms.Label
-    $lp.Text = 'Путь:'; $lp.Left = 16; $lp.Top = $y + 2; $lp.Width = 92; $lp.Height = 22; $lp.TextAlign = 'MiddleLeft'
-    Set-DarkLabel $lp; $f.Controls.Add($lp)
-    $tPath = New-Object System.Windows.Forms.TextBox
-    $tPath.Left = 114; $tPath.Top = $y; $tPath.Width = 300; $tPath.Text = 'cam/realmonitor?channel=1&subtype=0'
-    Set-DarkInput $tPath; $f.Controls.Add($tPath); $y += 42
+    & $mkLabel 'Путь снапшота:' 12 112 118
+    $tbPath = & $mkInput 138 112 494 (Get-CamPreset -Vendor 'Dahua' -Kind 'Snapshot')
+    $cb.SelectedIndex = 0
+    # смена вендора подставляет путь снапшота (пусто у Uniview/Свой — вписать руками)
+    $cb.Add_SelectedIndexChanged({ $tbPath.Text = (Get-CamPreset -Vendor ([string]$cb.SelectedItem) -Kind 'Snapshot') }.GetNewClosure())
 
-    $presets = @{ 'Dahua' = 'cam/realmonitor?channel=1&subtype=0'; 'Hikvision' = 'Streaming/Channels/101'; 'Uniview' = 'unicast/c1/s0/live'; 'Свой путь' = '' }
-    $cb.Add_SelectedIndexChanged({ $v = [string]$presets[[string]$cb.SelectedItem]; if ($v) { $tPath.Text = $v } }.GetNewClosure())
+    $btnGo = New-Object System.Windows.Forms.Button
+    $btnGo.Text = 'Смотреть'; $btnGo.Left = 138; $btnGo.Top = 150; $btnGo.Width = 150; $btnGo.Height = 32
+    Set-FlatButton $btnGo -Primary; $top.Controls.Add($btnGo)
+    $btnStop = New-Object System.Windows.Forms.Button
+    $btnStop.Text = 'Стоп'; $btnStop.Left = 296; $btnStop.Top = 150; $btnStop.Width = 90; $btnStop.Height = 32
+    Set-FlatButton $btnStop; $top.Controls.Add($btnStop)
+    $btnRtsp = New-Object System.Windows.Forms.Button
+    $btnRtsp.Text = 'RTSP-ссылка'; $btnRtsp.Left = 394; $btnRtsp.Top = 150; $btnRtsp.Width = 130; $btnRtsp.Height = 32
+    Set-FlatButton $btnRtsp; $top.Controls.Add($btnRtsp)
 
-    $btn = New-Object System.Windows.Forms.Button
-    $btn.Text = 'Открыть в VLC'; $btn.Left = 114; $btn.Top = $y; $btn.Width = 150; $btn.Height = 30
-    Set-FlatButton $btn -Primary; $f.Controls.Add($btn)
-    $btn.Add_Click({
-        $vlc = Get-VlcPath
-        if (-not $vlc) {
-            [void][System.Windows.Forms.MessageBox]::Show('VLC не найден. Установи VLC в разделе «Программы».', 'RTSP', 'OK', 'Warning'); return
+    # --- превью (центр) ---
+    $pic = New-Object System.Windows.Forms.PictureBox
+    $pic.Dock = 'Fill'; $pic.BackColor = [System.Drawing.Color]::Black; $pic.SizeMode = 'Zoom'
+    $f.Controls.Add($pic); $pic.BringToFront()
+
+    # общее состояние между тиками таймера (hashtable по ссылке — переживает тики;
+    # $script: в замыкании из функции = $null, поэтому только локальный объект).
+    $state = @{ url = ''; user = ''; pass = ''; err = 0 }
+    # цвета захватываем локально: $script: внутри .GetNewClosure() = $null (подвох
+    # проекта) — присвоение ForeColor = $null кинуло бы исключение.
+    $cDim = $script:Theme.TextDim; $cWarn = $script:Theme.AccentText
+
+    $timer = New-Object System.Windows.Forms.Timer
+    $timer.Interval = 1200
+    $timer.Add_Tick({
+        try {
+            $img = Get-CamSnapshot -Url $state.url -User $state.user -Pass $state.pass -TimeoutMs 2000
+            $old = $pic.Image; $pic.Image = $img; if ($old) { $old.Dispose() }
+            $state.err = 0
+            $status.ForeColor = $cDim
+            $status.Text = "кадр обновлён  $([DateTime]::Now.ToString('HH:mm:ss'))"
+        } catch {
+            $state.err++
+            if ($state.err -ge 3) {
+                $timer.Stop(); $btnGo.Enabled = $true
+                $status.Text = 'поток пропал — проверь путь/порт/логин и нажми «Смотреть»'
+            } else {
+                $status.Text = "нет кадра ($($state.err))..."
+            }
         }
-        $ip = $tb['ip'].Text.Trim()
-        if (-not $ip) { return }
-        # Логин/пароль экранируем: у камер часто пароли вида Admin#123 (@ : / # ? ломают URL).
-        $auth = if ($tb['user'].Text) { "$([Uri]::EscapeDataString($tb['user'].Text)):$([Uri]::EscapeDataString($tb['pass'].Text))@" } else { '' }
-        $path = $tPath.Text.TrimStart('/')
-        $port = $tb['port'].Text.Trim(); if (-not $port) { $port = '554' }
-        $url = "rtsp://$auth${ip}:$port/$path"
-        try { Start-Process $vlc -ArgumentList $url; $f.Close() }
-        catch { [void][System.Windows.Forms.MessageBox]::Show("Не удалось запустить VLC:`n$($_.Exception.Message)", 'RTSP', 'OK', 'Error') }
     }.GetNewClosure())
 
-    $f.AcceptButton = $btn                       # Enter — открыть в VLC
+    $btnGo.Add_Click({
+        $ip = $tbIp.Text.Trim()
+        if (-not $ip) { $status.Text = 'впиши IP камеры'; return }
+        $port = 0; if (-not [int]::TryParse($tbPort.Text.Trim(), [ref]$port) -or $port -le 0) { $port = 80 }
+        $state.url = New-CamUrl -Scheme 'http' -IP $ip -Port $port -User '' -Pass '' -Path $tbPath.Text
+        $state.user = $tbUser.Text; $state.pass = $tbPass.Text; $state.err = 0
+        $btnGo.Enabled = $false; $status.ForeColor = $cDim; $status.Text = 'подключаюсь...'
+        [System.Windows.Forms.Application]::DoEvents()
+        try {
+            $img = Get-CamSnapshot -Url $state.url -User $state.user -Pass $state.pass -TimeoutMs 3000
+            $old = $pic.Image; $pic.Image = $img; if ($old) { $old.Dispose() }
+            $status.Text = "кадр обновлён  $([DateTime]::Now.ToString('HH:mm:ss'))"
+            $timer.Start()
+        } catch {
+            $btnGo.Enabled = $true
+            $status.ForeColor = $cWarn
+            $status.Text = "не удалось: $($_.Exception.Message)"
+        }
+    }.GetNewClosure())
+
+    $btnStop.Add_Click({ $timer.Stop(); $btnGo.Enabled = $true; $status.Text = 'остановлено' }.GetNewClosure())
+
+    # RTSP-ссылка в буфер (порт 554, путь по вендору) — для камер без веб-снапшота.
+    # Если VLC найден — заодно открываем в нём (без автоустановки: плеер не тянем).
+    $btnRtsp.Add_Click({
+        $ip = $tbIp.Text.Trim()
+        if (-not $ip) { $status.Text = 'впиши IP камеры'; return }
+        $rp = Get-CamPreset -Vendor ([string]$cb.SelectedItem) -Kind 'Rtsp'
+        if (-not $rp) { $rp = 'Streaming/Channels/101' }
+        $url = New-CamUrl -Scheme 'rtsp' -IP $ip -Port 554 -User $tbUser.Text -Pass $tbPass.Text -Path $rp
+        try { [System.Windows.Forms.Clipboard]::SetText($url) } catch { $null = $_ }
+        $vlc = Get-VlcPath
+        if ($vlc) {
+            try { Start-Process $vlc -ArgumentList $url; $status.Text = 'RTSP скопирован, открываю в VLC' }
+            catch { $status.Text = 'RTSP-ссылка скопирована в буфер' }
+        } else {
+            $status.Text = 'RTSP-ссылка скопирована — вставь в свой плеер (VLC/mpv/браузер камеры)'
+        }
+    }.GetNewClosure())
+
+    $f.AcceptButton = $btnGo                      # Enter — смотреть
     $f.KeyPreview = $true
     $f.Add_KeyDown({ if ($_.KeyCode -eq [System.Windows.Forms.Keys]::Escape) { $f.Close() } }.GetNewClosure())
+    # уборка: остановить таймер и освободить картинку
+    $f.Add_FormClosing({
+        try { $timer.Stop(); $timer.Dispose() } catch { $null = $_ }
+        if ($pic.Image) { try { $pic.Image.Dispose() } catch { $null = $_ } }
+    }.GetNewClosure())
     [void]$f.ShowDialog(); $f.Dispose()
 }
 
@@ -997,7 +1106,7 @@ function Show-GuiNetworkScan {
     $btnDb.Text = 'Обновить базу'; $btnDb.Left = 396; $btnDb.Top = 9; $btnDb.Width = 110; $btnDb.Height = 28
     Set-FlatButton $btnDb
     $btnRtsp = New-Object System.Windows.Forms.Button
-    $btnRtsp.Text = 'RTSP в VLC'; $btnRtsp.Left = 512; $btnRtsp.Top = 9; $btnRtsp.Width = 92; $btnRtsp.Height = 28
+    $btnRtsp.Text = 'Просмотр камеры'; $btnRtsp.Left = 490; $btnRtsp.Top = 9; $btnRtsp.Width = 114; $btnRtsp.Height = 28
     Set-FlatButton $btnRtsp
     $btnRtsp.Add_Click({ Show-GuiRtsp -IP '' }.GetNewClosure())
     $status = New-Object System.Windows.Forms.Label
@@ -1008,7 +1117,7 @@ function Show-GuiNetworkScan {
     $tip = New-Object System.Windows.Forms.ToolTip
     $tip.AutoPopDelay = 12000; $tip.InitialDelay = 400
     $tip.SetToolTip($btnScan, 'Пинг-скан подсети + проба портов камер (камеры выделяются цветом)')
-    $tip.SetToolTip($btnRtsp, 'Открыть RTSP-поток камеры в VLC (можно ввести IP вручную)')
+    $tip.SetToolTip($btnRtsp, 'Просмотр камеры: встроенный кадр по HTTP-снапшоту (без плеера) + RTSP-ссылка')
     $tip.SetToolTip($btnDb, 'Перекачать базу вендоров по MAC (OUI) — удобно заранее в офисе')
     # Принудительно перекачать базу вендоров (удобно скачать заранее в офисе).
     $btnDb.Add_Click({
@@ -1052,7 +1161,7 @@ function Show-GuiNetworkScan {
     $cm = New-Object System.Windows.Forms.ContextMenuStrip
     $miWeb = $cm.Items.Add('Открыть веб-интерфейс')
     $miWeb.Add_Click({ if ($hit.item) { Start-Process ('http://' + $hit.item.SubItems[0].Text) } }.GetNewClosure())
-    $miRtsp = $cm.Items.Add('Открыть RTSP в VLC')
+    $miRtsp = $cm.Items.Add('Просмотр камеры (снапшот/RTSP)')
     $miRtsp.Add_Click({ if ($hit.item) { Show-GuiRtsp -IP $hit.item.SubItems[0].Text } }.GetNewClosure())
     [void]$cm.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
     $miCell = $cm.Items.Add('Копировать ячейку')
@@ -1073,7 +1182,7 @@ function Show-GuiNetworkScan {
             & $copy (& $rowText $lv.SelectedItems[0])
         }
     }.GetNewClosure())
-    $tip.SetToolTip($lv, 'Камеры выделены цветом · 2× клик — веб-интерфейс · ПКМ — RTSP/копировать · клик по заголовку — сортировка')
+    $tip.SetToolTip($lv, 'Камеры выделены цветом · 2× клик — веб-интерфейс · ПКМ — просмотр/копировать · клик по заголовку — сортировка')
     # Двойной клик по устройству — открыть его веб-интерфейс.
     $lv.Add_DoubleClick({ if ($lv.SelectedItems.Count) { Start-Process ('http://' + $lv.SelectedItems[0].SubItems[0].Text) } }.GetNewClosure())
     # Сортировка по клику на заголовок: IP — по версии, порты — по первому числу, прочее — строкой.
