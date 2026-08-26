@@ -26,6 +26,7 @@ $Programs = @(
     @{ Group = 'Браузер / общее'; Name = 'Google Chrome';        Winget = 'Google.Chrome';                   Url = 'https://www.google.com/chrome/' }
     @{ Name = '7-Zip';                Winget = '7zip.7zip';                       Url = 'https://www.7-zip.org/' }
     @{ Name = 'VLC media player';     Winget = 'VideoLAN.VLC';                    Url = 'https://www.videolan.org/vlc/' }
+    @{ Name = 'K-Lite Codec Pack Mega'; Winget = 'CodecGuide.K-LiteCodecPack.Mega'; Url = 'https://codecguide.com/download_k-lite_codec_pack_mega.htm' }
     @{ Name = 'qBittorrent';          Winget = 'qBittorrent.qBittorrent';         Url = 'https://www.qbittorrent.org/download' }
     @{ Name = 'Notepad++';            Winget = 'Notepad++.Notepad++';             Url = 'https://notepad-plus-plus.org/downloads/' }
     # --- Удалёнка / доступ ---
