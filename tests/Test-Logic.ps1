@@ -14,7 +14,7 @@ $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.Assignmen
     ForEach-Object { Invoke-Expression $_.Extent.Text }
 
 # Тестируемые функции.
-foreach ($fn in 'Get-DahuaBitRate', 'Get-DahuaStorageKB', 'Get-DahuaDays', 'ConvertTo-JsDelivr', 'Get-CamPreset', 'New-CamUrl') {
+foreach ($fn in 'Get-DahuaBitRate', 'Get-DahuaStorageKB', 'Get-DahuaDays', 'ConvertTo-JsDelivr', 'Get-CamPreset', 'New-CamUrl', 'Get-XmlLocal', 'ConvertFrom-OnvifScopes', 'New-OnvifPasswordDigest') {
     $f = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $fn }, $true)
     if (-not $f) { Write-Host "::error::функция $fn не найдена в menu.ps1"; exit 1 }
     Invoke-Expression $f.Extent.Text
@@ -46,6 +46,23 @@ Assert-Eq (Get-CamPreset -Vendor 'Hikvision' -Kind 'Rtsp') 'Streaming/Channels/1
 Assert-Eq ([string](Get-CamPreset -Vendor 'НетТакого' -Kind 'Snapshot')) '' 'неизвестный вендор -> пусто'
 Assert-Eq (New-CamUrl -Scheme 'http' -IP '192.168.1.10' -Port 80 -User '' -Pass '' -Path '/cgi-bin/snapshot.cgi?channel=1') 'http://192.168.1.10:80/cgi-bin/snapshot.cgi?channel=1' 'снапшот-URL без учётки в адресе'
 Assert-Eq (New-CamUrl -Scheme 'rtsp' -IP '10.0.0.5' -Port 554 -User 'admin' -Pass 'Admin#123' -Path 'Streaming/Channels/101') 'rtsp://admin:Admin%23123@10.0.0.5:554/Streaming/Channels/101' 'RTSP-URL: пароль Admin#123 экранирован'
+
+# --- ONVIF: Get-XmlLocal, scopes, WS-Security digest ---
+$pm = '<d:ProbeMatch xmlns:d="x"><d:Scopes>onvif://www.onvif.org/name/IPC-HFW2431 onvif://www.onvif.org/hardware/HFW2431-S2 onvif://www.onvif.org/manufacturer/Dahua</d:Scopes><d:XAddrs>http://192.168.1.108:80/onvif/device_service http://[fe80::1]/onvif/device_service</d:XAddrs></d:ProbeMatch>'
+Assert-Eq ([regex]::Match((Get-XmlLocal $pm 'XAddrs'), 'https?://([^/:]+)').Groups[1].Value) '192.168.1.108' 'ONVIF: IP из XAddrs'
+$sc = ConvertFrom-OnvifScopes @((Get-XmlLocal $pm 'Scopes') -split '\s+' | Where-Object { $_ })
+Assert-Eq $sc.Name 'IPC-HFW2431' 'ONVIF scopes: name'
+Assert-Eq $sc.Vendor 'Dahua' 'ONVIF scopes: manufacturer'
+# PasswordDigest = Base64(SHA1(nonce_raw + created + pass)) — эталон считаем независимо
+$nb = [Convert]::FromBase64String('MTIzNDU2Nzg5MDEyMzQ1Ng==')  # 16 байт "1234567890123456"
+$created = '2020-01-01T00:00:00Z'; $pass = 'Test123'
+$cat = New-Object System.IO.MemoryStream
+$cat.Write($nb, 0, $nb.Length)
+$cb = [Text.Encoding]::UTF8.GetBytes($created); $cat.Write($cb, 0, $cb.Length)
+$pb = [Text.Encoding]::UTF8.GetBytes($pass);   $cat.Write($pb, 0, $pb.Length)
+$sha = [Security.Cryptography.SHA1]::Create()
+$expDigest = [Convert]::ToBase64String($sha.ComputeHash($cat.ToArray())); $sha.Dispose()
+Assert-Eq (New-OnvifPasswordDigest -NonceBytes $nb -Created $created -Password $pass) $expDigest 'ONVIF WS-Security PasswordDigest'
 
 if ($fail) { Write-Host "Провалено тестов: $fail" -ForegroundColor Red; exit 1 }
 Write-Host "Все тесты логики пройдены." -ForegroundColor Green

@@ -1259,6 +1259,7 @@ function Show-NetworkMenu {
         Write-Host "   [6] " -NoNewline -ForegroundColor Green; Write-Host "DNS -> Google (8.8.8.8)            [админ]"
         Write-Host "   [7] " -NoNewline -ForegroundColor Green; Write-Host "DNS -> автоматический (DHCP)       [админ]"
         Write-Host "   [8] " -NoNewline -ForegroundColor Green; Write-Host "Сброс сети (Winsock + TCP/IP)      [админ]"
+        Write-Host "   [9] " -NoNewline -ForegroundColor Green; Write-Host "ONVIF-поиск камер (+ точный RTSP)"
         Write-Host "   [0] " -NoNewline -ForegroundColor Red;   Write-Host "Назад"
         Write-Host ""
         $c = (Read-Host "  Выбор").Trim()
@@ -1271,6 +1272,7 @@ function Show-NetworkMenu {
             '6' { Switch-Dns '8.8.8.8', '8.8.4.4'; Wait-Continue }
             '7' { Switch-Dns @();                  Wait-Continue }
             '8' { Repair-Network;                  Wait-Continue }
+            '9' { Show-OnvifScan;                  Wait-Continue }
             '0' { return }
             default { Write-Host "`n  Неверный выбор." -ForegroundColor Yellow; Start-Sleep 1 }
         }
@@ -2044,6 +2046,216 @@ function New-CamUrl {
     if ($User) { $auth = "$([Uri]::EscapeDataString($User)):$([Uri]::EscapeDataString($Pass))@" }
     $p = ([string]$Path).TrimStart('/')
     return "${Scheme}://${auth}${IP}:${Port}/${p}"
+}
+
+# ==================== ONVIF ====================
+# Обнаружение камер (WS-Discovery, multicast UDP 3702, без пароля) и опрос точных
+# RTSP/snapshot-URI от самой камеры (ONVIF Media, с авторизацией WS-Security).
+# Чистый .NET, без зависимостей.
+
+# Значение первого элемента <ns:Local ...>...</ns:Local> без учёта namespace-префикса.
+function Get-XmlLocal {
+    param([string]$Xml, [string]$Local)
+    $m = [regex]::Match($Xml, "(?s)<(?:[A-Za-z0-9_.]+:)?$Local\b[^>]*>(.*?)</(?:[A-Za-z0-9_.]+:)?$Local>")
+    if ($m.Success) { return $m.Groups[1].Value.Trim() }
+    return ''
+}
+
+# Разобрать ONVIF Scopes (onvif://.../name/... , /hardware/... , /location/...) в
+# производителя/модель/имя. Значения URL-декодируем; вендор — из /manufacturer/
+# либо по ключевым словам в name/hardware.
+function ConvertFrom-OnvifScopes {
+    param([string[]]$Scopes)
+    $r = @{ Name = ''; Hardware = ''; Location = ''; Vendor = '' }
+    foreach ($s in $Scopes) {
+        if ($s -match 'onvif://[^/]+/name/(.+)$') { $r.Name = [uri]::UnescapeDataString($Matches[1]) }
+        elseif ($s -match 'onvif://[^/]+/hardware/(.+)$') { $r.Hardware = [uri]::UnescapeDataString($Matches[1]) }
+        elseif ($s -match 'onvif://[^/]+/location/(.+)$') { $r.Location = [uri]::UnescapeDataString($Matches[1]) }
+        elseif ($s -match 'onvif://[^/]+/manufacturer/(.+)$') { $r.Vendor = [uri]::UnescapeDataString($Matches[1]) }
+    }
+    if (-not $r.Vendor) {
+        $hay = "$($r.Name) $($r.Hardware)"
+        foreach ($v in 'Dahua', 'Hikvision', 'Uniview', 'Amcrest', 'Reolink', 'Axis', 'Bosch', 'Hanwha', 'Ezviz', 'TP-Link', 'Tiandy') {
+            if ($hay -match $v) { $r.Vendor = $v; break }
+        }
+    }
+    return $r
+}
+
+# WS-Security PasswordDigest (OASIS WSS UsernameToken):
+#   Base64( SHA1( nonce_raw + created + password ) )
+# nonce_raw — СЫРЫЕ байты nonce (не base64-строка!); created/password — UTF-8.
+function New-OnvifPasswordDigest {
+    param([byte[]]$NonceBytes, [string]$Created, [string]$Password)
+    $crt = [System.Text.Encoding]::UTF8.GetBytes($Created)
+    $pwd = [System.Text.Encoding]::UTF8.GetBytes($Password)
+    $buf = New-Object byte[] ($NonceBytes.Length + $crt.Length + $pwd.Length)
+    [Array]::Copy($NonceBytes, 0, $buf, 0, $NonceBytes.Length)
+    [Array]::Copy($crt, 0, $buf, $NonceBytes.Length, $crt.Length)
+    [Array]::Copy($pwd, 0, $buf, $NonceBytes.Length + $crt.Length, $pwd.Length)
+    $sha = [System.Security.Cryptography.SHA1]::Create()
+    try { return [Convert]::ToBase64String($sha.ComputeHash($buf)) } finally { $sha.Dispose() }
+}
+
+# Заголовок wsse:Security со свежими nonce/created для одного запроса ('' без учётки).
+function New-OnvifSecurityHeader {
+    param([string]$User, [string]$Password)
+    if (-not $User) { return '' }
+    $nonce = New-Object byte[] 16
+    $rng = New-Object System.Security.Cryptography.RNGCryptoServiceProvider
+    try { $rng.GetBytes($nonce) } finally { $rng.Dispose() }
+    $created = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+    $digest = New-OnvifPasswordDigest -NonceBytes $nonce -Created $created -Password $Password
+    $nb64 = [Convert]::ToBase64String($nonce)
+    $u = [System.Security.SecurityElement]::Escape($User)
+    return @"
+<wsse:Security s:mustUnderstand="1" xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd"><wsse:UsernameToken><wsse:Username>$u</wsse:Username><wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest">$digest</wsse:Password><wsse:Nonce EncodingType="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary">$nb64</wsse:Nonce><wsu:Created>$created</wsu:Created></wsse:UsernameToken></wsse:Security>
+"@
+}
+
+# Один ONVIF-запрос (SOAP 1.2 POST). $BodyInner — содержимое <s:Body>. SOAP-fault
+# (400/500) тоже читаем — там текст ошибки камеры.
+function Invoke-OnvifSoap {
+    param([string]$Url, [string]$Action, [string]$BodyInner, [string]$User, [string]$Password, [int]$TimeoutMs = 5000)
+    $sec = New-OnvifSecurityHeader -User $User -Password $Password
+    $env = "<?xml version=`"1.0`" encoding=`"UTF-8`"?><s:Envelope xmlns:s=`"http://www.w3.org/2003/05/soap-envelope`"><s:Header>$sec</s:Header><s:Body>$BodyInner</s:Body></s:Envelope>"
+    $req = [System.Net.HttpWebRequest]::Create($Url)
+    $req.Method = 'POST'; $req.Timeout = $TimeoutMs; $req.ReadWriteTimeout = $TimeoutMs
+    $req.ContentType = "application/soap+xml; charset=utf-8; action=`"$Action`""
+    $req.UserAgent = 'HHToolbox/1.0'
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($env)
+    $req.ContentLength = $bytes.Length
+    $st = $req.GetRequestStream(); $st.Write($bytes, 0, $bytes.Length); $st.Close()
+    $resp = $null
+    try { $resp = $req.GetResponse() }
+    catch [System.Net.WebException] { $resp = $_.Exception.Response; if (-not $resp) { throw } }
+    $sr = New-Object System.IO.StreamReader($resp.GetResponseStream())
+    try { return $sr.ReadToEnd() } finally { $sr.Close(); $resp.Close() }
+}
+
+# WS-Discovery: multicast Probe с каждого активного IPv4-интерфейса, сбор ProbeMatch.
+# Возвращает массив @{IP; Xaddr; Vendor; Model; Name}. Анонимно (без пароля).
+function Invoke-OnvifDiscovery {
+    param([int]$TimeoutMs = 3000, [scriptblock]$Progress)
+    $probe = '<?xml version="1.0" encoding="UTF-8"?><e:Envelope xmlns:e="http://www.w3.org/2003/05/soap-envelope" xmlns:w="http://schemas.xmlsoap.org/ws/2004/08/addressing" xmlns:d="http://schemas.xmlsoap.org/ws/2005/04/discovery" xmlns:dn="http://www.onvif.org/ver10/network/wsdl"><e:Header><w:MessageID>uuid:__MID__</w:MessageID><w:To e:mustUnderstand="true">urn:schemas-xmlsoap-org:ws:2005:04:discovery</w:To><w:Action e:mustUnderstand="true">http://schemas.xmlsoap.org/ws/2005/04/discovery/Probe</w:Action></e:Header><e:Body><d:Probe><d:Types>dn:NetworkVideoTransmitter</d:Types></d:Probe></e:Body></e:Envelope>'
+    $ep = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Parse('239.255.255.250'), 3702)
+    $found = @{}
+    # Реальные IPv4-интерфейсы. Виртуальные (Hyper-V/WSL/VMware/VPN) и APIPA
+    # отбрасываем — иначе на ПК с кучей адаптеров опрос тянется вечно, а камеры
+    # всё равно на физическом NIC. Если после фильтра пусто — берём всё подряд.
+    $skip = 'Loopback|Virtual|Hyper-?V|VMware|VirtualBox|VBox|Bluetooth|WSL|TAP|TUN|Pseudo|Tunnel|Npcap|Docker|ZeroTier|Tailscale|WireGuard|OpenVPN'
+    $pickIfaces = {
+        param($filter)
+        $out = @()
+        foreach ($ni in [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces()) {
+            if ($ni.OperationalStatus -ne 'Up' -or $ni.NetworkInterfaceType -eq 'Loopback') { continue }
+            if ($filter -and ("$($ni.Name) $($ni.Description)" -match $skip)) { continue }
+            foreach ($ua in $ni.GetIPProperties().UnicastAddresses) {
+                $a = $ua.Address
+                if ($a.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork -and -not $a.ToString().StartsWith('169.254.')) { $out += $a }
+            }
+        }
+        $out
+    }
+    $locals = @(& $pickIfaces $true)
+    if (-not $locals) { $locals = @(& $pickIfaces $false) }
+    if (-not $locals) { $locals = @([System.Net.IPAddress]::Any) }
+    $locals = @($locals | Select-Object -Unique | Select-Object -First 6)
+    $perIface = [Math]::Min(1500, [Math]::Max(600, [int]($TimeoutMs / [Math]::Max(1, $locals.Count))))
+    foreach ($local in $locals) {
+        if ($Progress) { try { & $Progress "ONVIF-опрос через $local..." } catch { $null = $_ } }
+        $u = $null
+        try {
+            $u = New-Object System.Net.Sockets.UdpClient
+            $u.Client.SetSocketOption([System.Net.Sockets.SocketOptionLevel]::Socket, [System.Net.Sockets.SocketOptionName]::ReuseAddress, $true)
+            $u.Client.Bind((New-Object System.Net.IPEndPoint($local, 0)))
+            $u.Client.ReceiveTimeout = 500
+            $msg = $probe.Replace('__MID__', [guid]::NewGuid().ToString())
+            $b = [System.Text.Encoding]::UTF8.GetBytes($msg)
+            [void]$u.Send($b, $b.Length, $ep)
+            $deadline = [DateTime]::UtcNow.AddMilliseconds($perIface)
+            while ([DateTime]::UtcNow -lt $deadline) {
+                try {
+                    $rep = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Any, 0)
+                    $data = $u.Receive([ref]$rep)
+                    $text = [System.Text.Encoding]::UTF8.GetString($data)
+                    $svc = ([regex]::Match((Get-XmlLocal $text 'XAddrs'), 'https?://[^\s]+')).Value
+                    $ip = ([regex]::Match($svc, 'https?://([^/:]+)')).Groups[1].Value
+                    if (-not $ip) { $ip = $rep.Address.ToString() }
+                    $info = ConvertFrom-OnvifScopes @((Get-XmlLocal $text 'Scopes') -split '\s+' | Where-Object { $_ })
+                    if ($ip -and -not $found[$ip]) {
+                        $found[$ip] = [pscustomobject]@{ IP = $ip; Xaddr = $svc; Vendor = $info.Vendor; Model = $info.Hardware; Name = $info.Name }
+                    }
+                } catch { $null = $_ }   # ReceiveTimeout -> проверяем дедлайн
+            }
+        } catch { $null = $_ }
+        finally { if ($u) { $u.Close() } }
+    }
+    return @($found.Values | Sort-Object { try { [version]$_.IP } catch { $_.IP } })
+}
+
+# Фаза 2: точные RTSP и snapshot URI от камеры по ONVIF (нужны логин/пароль).
+# GetCapabilities(Media) -> media endpoint; GetProfiles -> токен; GetStreamUri /
+# GetSnapshotUri. Возвращает @{Rtsp; Snapshot; Profile}. Кидает при отказе.
+function Get-OnvifStreamUri {
+    param([string]$Xaddr, [string]$User, [string]$Password, [int]$TimeoutMs = 5000)
+    $dev = 'http://www.onvif.org/ver10/device/wsdl'
+    $med = 'http://www.onvif.org/ver10/media/wsdl'
+    $sch = 'http://www.onvif.org/ver10/schema'
+    $mediaUrl = $Xaddr
+    try {
+        $cap = Invoke-OnvifSoap -Url $Xaddr -Action "$dev/GetCapabilities" -User $User -Password $Password -TimeoutMs $TimeoutMs `
+            -BodyInner "<tds:GetCapabilities xmlns:tds=`"$dev`"><tds:Category>Media</tds:Category></tds:GetCapabilities>"
+        $mx = Get-XmlLocal $cap 'XAddr'
+        if ($mx -match '^https?://') { $mediaUrl = $mx }
+    } catch { $null = $_ }
+    $prof = Invoke-OnvifSoap -Url $mediaUrl -Action "$med/GetProfiles" -User $User -Password $Password -TimeoutMs $TimeoutMs `
+        -BodyInner "<trt:GetProfiles xmlns:trt=`"$med`"/>"
+    $token = ([regex]::Match($prof, 'token="([^"]+)"')).Groups[1].Value
+    if (-not $token) { throw 'камера не вернула профилей (проверь логин/пароль ONVIF)' }
+    $su = Invoke-OnvifSoap -Url $mediaUrl -Action "$med/GetStreamUri" -User $User -Password $Password -TimeoutMs $TimeoutMs `
+        -BodyInner "<trt:GetStreamUri xmlns:trt=`"$med`"><trt:StreamSetup xmlns:tt=`"$sch`"><tt:Stream>RTP-Unicast</tt:Stream><tt:Transport><tt:Protocol>RTSP</tt:Protocol></tt:Transport></trt:StreamSetup><trt:ProfileToken>$token</trt:ProfileToken></trt:GetStreamUri>"
+    $rtsp = Get-XmlLocal $su 'Uri'
+    $snap = ''
+    try {
+        $sn = Invoke-OnvifSoap -Url $mediaUrl -Action "$med/GetSnapshotUri" -User $User -Password $Password -TimeoutMs $TimeoutMs `
+            -BodyInner "<trt:GetSnapshotUri xmlns:trt=`"$med`"><trt:ProfileToken>$token</trt:ProfileToken></trt:GetSnapshotUri>"
+        $snap = Get-XmlLocal $sn 'Uri'
+    } catch { $null = $_ }
+    return [pscustomobject]@{ Rtsp = $rtsp; Snapshot = $snap; Profile = $token }
+}
+
+# CLI: ONVIF-поиск камер + опционально точные RTSP/snapshot по логину/паролю.
+function Show-OnvifScan {
+    Write-Box 'ONVIF-поиск камер (WS-Discovery)' 'Cyan'
+    Write-Host "   Опрашиваю сеть (несколько секунд)..." -ForegroundColor DarkGray
+    $cams = @(Invoke-OnvifDiscovery -TimeoutMs 3500)
+    if (-not $cams.Count) {
+        Write-Host "`n   ONVIF-камеры не найдены (проверь, что ПК в той же подсети/VLAN)." -ForegroundColor Yellow
+        return
+    }
+    Write-Host ""
+    $i = 0
+    foreach ($c in $cams) {
+        $i++
+        $desc = (@($c.Vendor, $c.Model, $c.Name) | Where-Object { $_ }) -join ' '
+        Write-Host ("   [{0}] {1,-15} {2}" -f $i, $c.IP, $desc) -ForegroundColor Green
+        Write-Host ("        $($c.Xaddr)") -ForegroundColor DarkGray
+    }
+    Write-Host ""
+    $sel = (Read-Host "   № камеры для точного RTSP/snapshot (Enter — пропустить)").Trim()
+    if ($sel -match '^\d+$' -and [int]$sel -ge 1 -and [int]$sel -le $cams.Count) {
+        $cam = $cams[[int]$sel - 1]
+        $u = Read-Host "   Логин ONVIF"
+        $p = Read-Host "   Пароль ONVIF"
+        try {
+            $onv = Get-OnvifStreamUri -Xaddr $cam.Xaddr -User $u -Password $p
+            Write-Host "`n   RTSP:     $($onv.Rtsp)" -ForegroundColor Cyan
+            if ($onv.Snapshot) { Write-Host "   Snapshot: $($onv.Snapshot)" -ForegroundColor Cyan }
+        } catch {
+            Write-Host "`n   ONVIF не удалось: $($_.Exception.Message)" -ForegroundColor Red
+        }
+    }
 }
 
 # Путь к vlc.exe (Program Files / реестр / PATH), иначе $null.

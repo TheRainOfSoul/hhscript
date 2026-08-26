@@ -937,7 +937,7 @@ function Get-CamSnapshot {
 # Окно просмотра камеры: встроенный предпросмотр по HTTP-снапшоту (кадр раз в ~1с,
 # без скачивания плеера). Для камер без веб-снапшота — кнопка «RTSP-ссылка».
 function Show-GuiRtsp {
-    param([string]$IP)
+    param([string]$IP, [string]$Xaddr, [string]$Vendor)
     $f = New-Object System.Windows.Forms.Form
     $f.Text = 'Просмотр камеры'
     $f.Size = New-Object System.Drawing.Size(660, 640)
@@ -982,19 +982,24 @@ function Show-GuiRtsp {
     $top.Controls.Add($cb)
 
     & $mkLabel 'Путь снапшота:' 12 112 118
-    $tbPath = & $mkInput 138 112 494 (Get-CamPreset -Vendor 'Dahua' -Kind 'Snapshot')
-    $cb.SelectedIndex = 0
+    # начальный вендор: из ONVIF ($Vendor) если совпал со списком, иначе Dahua
+    $vi = if ($Vendor -and $cb.Items.Contains($Vendor)) { $cb.Items.IndexOf($Vendor) } else { 0 }
+    $tbPath = & $mkInput 138 112 494 (Get-CamPreset -Vendor ([string]$cb.Items[$vi]) -Kind 'Snapshot')
+    $cb.SelectedIndex = $vi
     # смена вендора подставляет путь снапшота (пусто у Uniview/Свой — вписать руками)
     $cb.Add_SelectedIndexChanged({ $tbPath.Text = (Get-CamPreset -Vendor ([string]$cb.SelectedItem) -Kind 'Snapshot') }.GetNewClosure())
 
     $btnGo = New-Object System.Windows.Forms.Button
-    $btnGo.Text = 'Смотреть'; $btnGo.Left = 138; $btnGo.Top = 150; $btnGo.Width = 150; $btnGo.Height = 32
+    $btnGo.Text = 'Смотреть'; $btnGo.Left = 138; $btnGo.Top = 150; $btnGo.Width = 118; $btnGo.Height = 32
     Set-FlatButton $btnGo -Primary; $top.Controls.Add($btnGo)
     $btnStop = New-Object System.Windows.Forms.Button
-    $btnStop.Text = 'Стоп'; $btnStop.Left = 296; $btnStop.Top = 150; $btnStop.Width = 90; $btnStop.Height = 32
+    $btnStop.Text = 'Стоп'; $btnStop.Left = 262; $btnStop.Top = 150; $btnStop.Width = 72; $btnStop.Height = 32
     Set-FlatButton $btnStop; $top.Controls.Add($btnStop)
+    $btnOnvif = New-Object System.Windows.Forms.Button
+    $btnOnvif.Text = 'ONVIF-путь'; $btnOnvif.Left = 340; $btnOnvif.Top = 150; $btnOnvif.Width = 140; $btnOnvif.Height = 32
+    Set-FlatButton $btnOnvif; $top.Controls.Add($btnOnvif)
     $btnRtsp = New-Object System.Windows.Forms.Button
-    $btnRtsp.Text = 'RTSP-ссылка'; $btnRtsp.Left = 394; $btnRtsp.Top = 150; $btnRtsp.Width = 130; $btnRtsp.Height = 32
+    $btnRtsp.Text = 'RTSP-ссылка'; $btnRtsp.Left = 486; $btnRtsp.Top = 150; $btnRtsp.Width = 140; $btnRtsp.Height = 32
     Set-FlatButton $btnRtsp; $top.Controls.Add($btnRtsp)
 
     # --- превью (центр) ---
@@ -1004,7 +1009,8 @@ function Show-GuiRtsp {
 
     # общее состояние между тиками таймера (hashtable по ссылке — переживает тики;
     # $script: в замыкании из функции = $null, поэтому только локальный объект).
-    $state = @{ url = ''; user = ''; pass = ''; err = 0 }
+    # rtsp — точная ссылка от ONVIF (если получена); xaddr — ONVIF service URL.
+    $state = @{ url = ''; user = ''; pass = ''; err = 0; rtsp = ''; xaddr = [string]$Xaddr }
     # цвета захватываем локально: $script: внутри .GetNewClosure() = $null (подвох
     # проекта) — присвоение ForeColor = $null кинуло бы исключение.
     $cDim = $script:Theme.TextDim; $cWarn = $script:Theme.AccentText
@@ -1051,14 +1057,48 @@ function Show-GuiRtsp {
 
     $btnStop.Add_Click({ $timer.Stop(); $btnGo.Enabled = $true; $status.Text = 'остановлено' }.GetNewClosure())
 
-    # RTSP-ссылка в буфер (порт 554, путь по вендору) — для камер без веб-снапшота.
-    # Если VLC найден — заодно открываем в нём (без автоустановки: плеер не тянем).
+    # ONVIF-путь: спросить у самой камеры точные snapshot/RTSP URI (нужны логин/пароль).
+    # Xaddr берём из скана (если камера найдена ONVIF-поиском), иначе стандартный эндпоинт.
+    $btnOnvif.Add_Click({
+        $ip = $tbIp.Text.Trim()
+        if (-not $ip) { $status.Text = 'впиши IP камеры'; return }
+        if (-not $tbUser.Text) { $status.Text = 'для ONVIF нужен логин/пароль камеры'; return }
+        $xa = $state.xaddr; if (-not $xa) { $xa = "http://${ip}/onvif/device_service" }
+        $btnOnvif.Enabled = $false; $status.ForeColor = $cDim; $status.Text = 'ONVIF: спрашиваю пути у камеры...'
+        [System.Windows.Forms.Application]::DoEvents()
+        try {
+            $onv = Get-OnvifStreamUri -Xaddr $xa -User $tbUser.Text -Password $tbPass.Text
+            $state.rtsp = [string]$onv.Rtsp
+            if ($onv.Snapshot) {
+                $su = [Uri]$onv.Snapshot
+                if ($su.Port -gt 0) { $tbPort.Text = [string]$su.Port }
+                $tbPath.Text = $su.PathAndQuery.TrimStart('/')
+                $status.Text = 'ONVIF: путь снапшота получен — жми «Смотреть»'
+            } elseif ($state.rtsp) {
+                $status.Text = 'ONVIF: snapshot не поддержан, но RTSP получен (кнопка «RTSP-ссылка»)'
+            } else {
+                $status.ForeColor = $cWarn; $status.Text = 'ONVIF ответил, но без путей'
+            }
+        } catch {
+            $status.ForeColor = $cWarn; $status.Text = "ONVIF не удалось: $($_.Exception.Message)"
+        } finally { $btnOnvif.Enabled = $true }
+    }.GetNewClosure())
+
+    # RTSP-ссылка в буфер (точная от ONVIF, иначе порт 554 + путь по вендору) — для
+    # камер без веб-снапшота. Если VLC найден — заодно открываем в нём (плеер не тянем).
     $btnRtsp.Add_Click({
         $ip = $tbIp.Text.Trim()
         if (-not $ip) { $status.Text = 'впиши IP камеры'; return }
-        $rp = Get-CamPreset -Vendor ([string]$cb.SelectedItem) -Kind 'Rtsp'
-        if (-not $rp) { $rp = 'Streaming/Channels/101' }
-        $url = New-CamUrl -Scheme 'rtsp' -IP $ip -Port 554 -User $tbUser.Text -Pass $tbPass.Text -Path $rp
+        if ($state.rtsp) {
+            # точный RTSP от ONVIF: если есть логин — подставим его в адрес для плеера
+            if ($tbUser.Text) {
+                $url = $state.rtsp -replace '^rtsp://', "rtsp://$([Uri]::EscapeDataString($tbUser.Text)):$([Uri]::EscapeDataString($tbPass.Text))@"
+            } else { $url = $state.rtsp }
+        } else {
+            $rp = Get-CamPreset -Vendor ([string]$cb.SelectedItem) -Kind 'Rtsp'
+            if (-not $rp) { $rp = 'Streaming/Channels/101' }
+            $url = New-CamUrl -Scheme 'rtsp' -IP $ip -Port 554 -User $tbUser.Text -Pass $tbPass.Text -Path $rp
+        }
         try { [System.Windows.Forms.Clipboard]::SetText($url) } catch { $null = $_ }
         $vlc = Get-VlcPath
         if ($vlc) {
@@ -1083,10 +1123,13 @@ function Show-GuiRtsp {
 function Show-GuiNetworkScan {
     $f = New-Object System.Windows.Forms.Form
     $f.Text          = 'Сканер сети'
-    $f.Size          = New-Object System.Drawing.Size(800, 560)
-    $f.MinimumSize   = New-Object System.Drawing.Size(600, 400)
+    $f.Size          = New-Object System.Drawing.Size(820, 560)
+    $f.MinimumSize   = New-Object System.Drawing.Size(640, 400)
     $f.StartPosition = 'CenterScreen'
     Initialize-DarkForm $f
+
+    # ONVIF-поиск наполняет: IP -> service URL и IP -> вендор (для «Просмотра камеры»).
+    $onvifXaddr = @{}; $onvifVendor = @{}
 
     $bar = New-Object System.Windows.Forms.Panel
     $bar.Dock = 'Top'; $bar.Height = 44; $bar.BackColor = $script:Theme.Bg
@@ -1100,23 +1143,27 @@ function Show-GuiNetworkScan {
     $suffix.Text = '.1-254'; $suffix.Left = 230; $suffix.Top = 12; $suffix.Width = 52; $suffix.Height = 23; $suffix.TextAlign = 'MiddleLeft'
     Set-DarkLabel $suffix
     $btnScan = New-Object System.Windows.Forms.Button
-    $btnScan.Text = 'Сканировать'; $btnScan.Left = 290; $btnScan.Top = 9; $btnScan.Width = 100; $btnScan.Height = 28
+    $btnScan.Text = 'Сканировать'; $btnScan.Left = 290; $btnScan.Top = 9; $btnScan.Width = 104; $btnScan.Height = 28
     Set-FlatButton $btnScan -Primary
-    $btnDb = New-Object System.Windows.Forms.Button
-    $btnDb.Text = 'Обновить базу'; $btnDb.Left = 396; $btnDb.Top = 9; $btnDb.Width = 110; $btnDb.Height = 28
-    Set-FlatButton $btnDb
+    $btnOnvif = New-Object System.Windows.Forms.Button
+    $btnOnvif.Text = 'ONVIF-поиск'; $btnOnvif.Left = 400; $btnOnvif.Top = 9; $btnOnvif.Width = 110; $btnOnvif.Height = 28
+    Set-FlatButton $btnOnvif
     $btnRtsp = New-Object System.Windows.Forms.Button
-    $btnRtsp.Text = 'Просмотр камеры'; $btnRtsp.Left = 490; $btnRtsp.Top = 9; $btnRtsp.Width = 114; $btnRtsp.Height = 28
+    $btnRtsp.Text = 'Просмотр камеры'; $btnRtsp.Left = 516; $btnRtsp.Top = 9; $btnRtsp.Width = 134; $btnRtsp.Height = 28
     Set-FlatButton $btnRtsp
     $btnRtsp.Add_Click({ Show-GuiRtsp -IP '' }.GetNewClosure())
+    $btnDb = New-Object System.Windows.Forms.Button
+    $btnDb.Text = 'Обновить базу'; $btnDb.Left = 656; $btnDb.Top = 9; $btnDb.Width = 120; $btnDb.Height = 28
+    Set-FlatButton $btnDb
+    # статус — отдельной строкой снизу окна (в тулбаре не хватало места на 4 кнопки)
     $status = New-Object System.Windows.Forms.Label
-    $status.Left = 610; $status.Top = 12; $status.Width = 170; $status.Height = 23; $status.TextAlign = 'MiddleLeft'
-    $status.Anchor = 'Top, Left, Right'
+    $status.Dock = 'Bottom'; $status.Height = 24; $status.TextAlign = 'MiddleLeft'
     Set-DarkLabel $status
-    $status.Text = 'ПКМ — меню · 2× — веб'
+    $status.Text = 'ПКМ — меню · 2× — веб · ONVIF-поиск находит камеры без ping'
     $tip = New-Object System.Windows.Forms.ToolTip
     $tip.AutoPopDelay = 12000; $tip.InitialDelay = 400
     $tip.SetToolTip($btnScan, 'Пинг-скан подсети + проба портов камер (камеры выделяются цветом)')
+    $tip.SetToolTip($btnOnvif, 'ONVIF WS-Discovery: находит камеры (даже молчащие на ping), вендор/модель от самой камеры')
     $tip.SetToolTip($btnRtsp, 'Просмотр камеры: встроенный кадр по HTTP-снапшоту (без плеера) + RTSP-ссылка')
     $tip.SetToolTip($btnDb, 'Перекачать базу вендоров по MAC (OUI) — удобно заранее в офисе')
     # Принудительно перекачать базу вендоров (удобно скачать заранее в офисе).
@@ -1135,7 +1182,7 @@ function Show-GuiNetworkScan {
             $f.Cursor = [System.Windows.Forms.Cursors]::Default
         }
     }.GetNewClosure())
-    $bar.Controls.AddRange(@($lbl, $tb, $suffix, $btnScan, $btnDb, $btnRtsp, $status))
+    $bar.Controls.AddRange(@($lbl, $tb, $suffix, $btnScan, $btnOnvif, $btnRtsp, $btnDb))
 
     $lv = New-Object System.Windows.Forms.ListView
     $lv.Dock = 'Fill'; $lv.View = 'Details'; $lv.FullRowSelect = $true
@@ -1162,7 +1209,12 @@ function Show-GuiNetworkScan {
     $miWeb = $cm.Items.Add('Открыть веб-интерфейс')
     $miWeb.Add_Click({ if ($hit.item) { Start-Process ('http://' + $hit.item.SubItems[0].Text) } }.GetNewClosure())
     $miRtsp = $cm.Items.Add('Просмотр камеры (снапшот/RTSP)')
-    $miRtsp.Add_Click({ if ($hit.item) { Show-GuiRtsp -IP $hit.item.SubItems[0].Text } }.GetNewClosure())
+    $miRtsp.Add_Click({
+        if ($hit.item) {
+            $ip = $hit.item.SubItems[0].Text
+            Show-GuiRtsp -IP $ip -Xaddr ([string]$onvifXaddr[$ip]) -Vendor ([string]$onvifVendor[$ip])
+        }
+    }.GetNewClosure())
     [void]$cm.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
     $miCell = $cm.Items.Add('Копировать ячейку')
     $miCell.Add_Click({ if ($hit.sub) { & $copy $hit.sub.Text } }.GetNewClosure())
@@ -1209,7 +1261,7 @@ function Show-GuiNetworkScan {
     $btnScan.Add_Click({
         $base = $tb.Text.Trim()
         $status.Text = "Сканирую $base.1-254 ..."
-        $btnScan.Enabled = $false; $btnDb.Enabled = $false; $btnRtsp.Enabled = $false
+        $btnScan.Enabled = $false; $btnDb.Enabled = $false; $btnRtsp.Enabled = $false; $btnOnvif.Enabled = $false
         $f.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
         $f.Refresh(); [System.Windows.Forms.Application]::DoEvents()
         try {
@@ -1236,12 +1288,56 @@ function Show-GuiNetworkScan {
         } catch {
             $status.Text = 'Ошибка: ' + $_.Exception.Message
         } finally {
-            $btnScan.Enabled = $true; $btnDb.Enabled = $true; $btnRtsp.Enabled = $true
+            $btnScan.Enabled = $true; $btnDb.Enabled = $true; $btnRtsp.Enabled = $true; $btnOnvif.Enabled = $true
+            $f.Cursor = [System.Windows.Forms.Cursors]::Default
+        }
+    }.GetNewClosure())
+
+    # ONVIF-поиск (WS-Discovery): находит камеры (даже молчащие на ping), от самой
+    # камеры получает вендор/модель и service URL. Обновляет строки скана или добавляет
+    # новые; помечает найденное цветом. Xaddr/вендор сохраняем для «Просмотра камеры».
+    $btnOnvif.Add_Click({
+        $status.Text = 'ONVIF-поиск камер (WS-Discovery)...'
+        $btnScan.Enabled = $false; $btnDb.Enabled = $false; $btnRtsp.Enabled = $false; $btnOnvif.Enabled = $false
+        $f.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+        $f.Refresh(); [System.Windows.Forms.Application]::DoEvents()
+        try {
+            $prog = { param($m) $status.Text = $m; [System.Windows.Forms.Application]::DoEvents() }.GetNewClosure()
+            $cams = @(Invoke-OnvifDiscovery -TimeoutMs 3500 -Progress $prog)
+            $rows = @{}; foreach ($it in $lv.Items) { $rows[$it.SubItems[0].Text] = $it }
+            $added = 0; $upd = 0
+            $lv.BeginUpdate()
+            foreach ($c in $cams) {
+                $onvifXaddr[$c.IP] = $c.Xaddr
+                if ($c.Vendor) { $onvifVendor[$c.IP] = $c.Vendor }
+                $model = (@($c.Model, $c.Name) | Where-Object { $_ }) -join ' '
+                $it = $rows[$c.IP]
+                if ($it) {
+                    if ($c.Vendor -and -not $it.SubItems[2].Text) { $it.SubItems[2].Text = $c.Vendor }
+                    if ($model -and -not $it.SubItems[3].Text) { $it.SubItems[3].Text = $model }
+                    $it.ForeColor = $accent; $upd++
+                } else {
+                    $it = New-Object System.Windows.Forms.ListViewItem($c.IP)
+                    [void]$it.SubItems.Add('—')
+                    [void]$it.SubItems.Add([string]$c.Vendor)
+                    [void]$it.SubItems.Add($model)
+                    [void]$it.SubItems.Add('ONVIF')
+                    $it.ForeColor = $accent
+                    [void]$lv.Items.Add($it); $added++
+                }
+            }
+            $lv.EndUpdate()
+            $status.Text = "ONVIF: найдено $($cams.Count) (новых $added, обновлено $upd)"
+        } catch {
+            $status.Text = 'ONVIF-ошибка: ' + $_.Exception.Message
+        } finally {
+            $btnScan.Enabled = $true; $btnDb.Enabled = $true; $btnRtsp.Enabled = $true; $btnOnvif.Enabled = $true
             $f.Cursor = [System.Windows.Forms.Cursors]::Default
         }
     }.GetNewClosure())
 
     $f.Controls.Add($lv)
+    $f.Controls.Add($status)
     $f.Controls.Add($bar)
     [void]$f.ShowDialog()
     $f.Dispose()
