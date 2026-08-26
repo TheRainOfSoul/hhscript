@@ -2086,26 +2086,26 @@ function ConvertFrom-OnvifScopes {
 #   Base64( SHA1( nonce_raw + created + password ) )
 # nonce_raw — СЫРЫЕ байты nonce (не base64-строка!); created/password — UTF-8.
 function New-OnvifPasswordDigest {
-    param([byte[]]$NonceBytes, [string]$Created, [string]$Password)
+    param([byte[]]$NonceBytes, [string]$Created, [string]$Pass)
     $crt = [System.Text.Encoding]::UTF8.GetBytes($Created)
-    $pwd = [System.Text.Encoding]::UTF8.GetBytes($Password)
-    $buf = New-Object byte[] ($NonceBytes.Length + $crt.Length + $pwd.Length)
+    $pw = [System.Text.Encoding]::UTF8.GetBytes($Pass)
+    $buf = New-Object byte[] ($NonceBytes.Length + $crt.Length + $pw.Length)
     [Array]::Copy($NonceBytes, 0, $buf, 0, $NonceBytes.Length)
     [Array]::Copy($crt, 0, $buf, $NonceBytes.Length, $crt.Length)
-    [Array]::Copy($pwd, 0, $buf, $NonceBytes.Length + $crt.Length, $pwd.Length)
+    [Array]::Copy($pw, 0, $buf, $NonceBytes.Length + $crt.Length, $pw.Length)
     $sha = [System.Security.Cryptography.SHA1]::Create()
     try { return [Convert]::ToBase64String($sha.ComputeHash($buf)) } finally { $sha.Dispose() }
 }
 
 # Заголовок wsse:Security со свежими nonce/created для одного запроса ('' без учётки).
 function New-OnvifSecurityHeader {
-    param([string]$User, [string]$Password)
+    param([string]$User, [string]$Pass)
     if (-not $User) { return '' }
     $nonce = New-Object byte[] 16
     $rng = New-Object System.Security.Cryptography.RNGCryptoServiceProvider
     try { $rng.GetBytes($nonce) } finally { $rng.Dispose() }
     $created = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
-    $digest = New-OnvifPasswordDigest -NonceBytes $nonce -Created $created -Password $Password
+    $digest = New-OnvifPasswordDigest -NonceBytes $nonce -Created $created -Pass $Pass
     $nb64 = [Convert]::ToBase64String($nonce)
     $u = [System.Security.SecurityElement]::Escape($User)
     return @"
@@ -2116,8 +2116,8 @@ function New-OnvifSecurityHeader {
 # Один ONVIF-запрос (SOAP 1.2 POST). $BodyInner — содержимое <s:Body>. SOAP-fault
 # (400/500) тоже читаем — там текст ошибки камеры.
 function Invoke-OnvifSoap {
-    param([string]$Url, [string]$Action, [string]$BodyInner, [string]$User, [string]$Password, [int]$TimeoutMs = 5000)
-    $sec = New-OnvifSecurityHeader -User $User -Password $Password
+    param([string]$Url, [string]$Action, [string]$BodyInner, [string]$User, [string]$Pass, [int]$TimeoutMs = 5000)
+    $sec = New-OnvifSecurityHeader -User $User -Pass $Pass
     $env = "<?xml version=`"1.0`" encoding=`"UTF-8`"?><s:Envelope xmlns:s=`"http://www.w3.org/2003/05/soap-envelope`"><s:Header>$sec</s:Header><s:Body>$BodyInner</s:Body></s:Envelope>"
     $req = [System.Net.HttpWebRequest]::Create($Url)
     $req.Method = 'POST'; $req.Timeout = $TimeoutMs; $req.ReadWriteTimeout = $TimeoutMs
@@ -2198,27 +2198,27 @@ function Invoke-OnvifDiscovery {
 # GetCapabilities(Media) -> media endpoint; GetProfiles -> токен; GetStreamUri /
 # GetSnapshotUri. Возвращает @{Rtsp; Snapshot; Profile}. Кидает при отказе.
 function Get-OnvifStreamUri {
-    param([string]$Xaddr, [string]$User, [string]$Password, [int]$TimeoutMs = 5000)
+    param([string]$Xaddr, [string]$User, [string]$Pass, [int]$TimeoutMs = 5000)
     $dev = 'http://www.onvif.org/ver10/device/wsdl'
     $med = 'http://www.onvif.org/ver10/media/wsdl'
     $sch = 'http://www.onvif.org/ver10/schema'
     $mediaUrl = $Xaddr
     try {
-        $cap = Invoke-OnvifSoap -Url $Xaddr -Action "$dev/GetCapabilities" -User $User -Password $Password -TimeoutMs $TimeoutMs `
+        $cap = Invoke-OnvifSoap -Url $Xaddr -Action "$dev/GetCapabilities" -User $User -Pass $Pass -TimeoutMs $TimeoutMs `
             -BodyInner "<tds:GetCapabilities xmlns:tds=`"$dev`"><tds:Category>Media</tds:Category></tds:GetCapabilities>"
         $mx = Get-XmlLocal $cap 'XAddr'
         if ($mx -match '^https?://') { $mediaUrl = $mx }
     } catch { $null = $_ }
-    $prof = Invoke-OnvifSoap -Url $mediaUrl -Action "$med/GetProfiles" -User $User -Password $Password -TimeoutMs $TimeoutMs `
+    $prof = Invoke-OnvifSoap -Url $mediaUrl -Action "$med/GetProfiles" -User $User -Pass $Pass -TimeoutMs $TimeoutMs `
         -BodyInner "<trt:GetProfiles xmlns:trt=`"$med`"/>"
     $token = ([regex]::Match($prof, 'token="([^"]+)"')).Groups[1].Value
     if (-not $token) { throw 'камера не вернула профилей (проверь логин/пароль ONVIF)' }
-    $su = Invoke-OnvifSoap -Url $mediaUrl -Action "$med/GetStreamUri" -User $User -Password $Password -TimeoutMs $TimeoutMs `
+    $su = Invoke-OnvifSoap -Url $mediaUrl -Action "$med/GetStreamUri" -User $User -Pass $Pass -TimeoutMs $TimeoutMs `
         -BodyInner "<trt:GetStreamUri xmlns:trt=`"$med`"><trt:StreamSetup xmlns:tt=`"$sch`"><tt:Stream>RTP-Unicast</tt:Stream><tt:Transport><tt:Protocol>RTSP</tt:Protocol></tt:Transport></trt:StreamSetup><trt:ProfileToken>$token</trt:ProfileToken></trt:GetStreamUri>"
     $rtsp = Get-XmlLocal $su 'Uri'
     $snap = ''
     try {
-        $sn = Invoke-OnvifSoap -Url $mediaUrl -Action "$med/GetSnapshotUri" -User $User -Password $Password -TimeoutMs $TimeoutMs `
+        $sn = Invoke-OnvifSoap -Url $mediaUrl -Action "$med/GetSnapshotUri" -User $User -Pass $Pass -TimeoutMs $TimeoutMs `
             -BodyInner "<trt:GetSnapshotUri xmlns:trt=`"$med`"><trt:ProfileToken>$token</trt:ProfileToken></trt:GetSnapshotUri>"
         $snap = Get-XmlLocal $sn 'Uri'
     } catch { $null = $_ }
@@ -2249,7 +2249,7 @@ function Show-OnvifScan {
         $u = Read-Host "   Логин ONVIF"
         $p = Read-Host "   Пароль ONVIF"
         try {
-            $onv = Get-OnvifStreamUri -Xaddr $cam.Xaddr -User $u -Password $p
+            $onv = Get-OnvifStreamUri -Xaddr $cam.Xaddr -User $u -Pass $p
             Write-Host "`n   RTSP:     $($onv.Rtsp)" -ForegroundColor Cyan
             if ($onv.Snapshot) { Write-Host "   Snapshot: $($onv.Snapshot)" -ForegroundColor Cyan }
         } catch {

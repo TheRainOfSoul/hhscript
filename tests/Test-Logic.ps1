@@ -62,7 +62,7 @@ $cb = [Text.Encoding]::UTF8.GetBytes($created); $cat.Write($cb, 0, $cb.Length)
 $pb = [Text.Encoding]::UTF8.GetBytes($pass);   $cat.Write($pb, 0, $pb.Length)
 $sha = [Security.Cryptography.SHA1]::Create()
 $expDigest = [Convert]::ToBase64String($sha.ComputeHash($cat.ToArray())); $sha.Dispose()
-Assert-Eq (New-OnvifPasswordDigest -NonceBytes $nb -Created $created -Password $pass) $expDigest 'ONVIF WS-Security PasswordDigest'
+Assert-Eq (New-OnvifPasswordDigest -NonceBytes $nb -Created $created -Pass $pass) $expDigest 'ONVIF WS-Security PasswordDigest'
 
 if ($fail) { Write-Host "Провалено тестов: $fail" -ForegroundColor Red; exit 1 }
 Write-Host "Все тесты логики пройдены." -ForegroundColor Green

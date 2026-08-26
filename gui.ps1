@@ -1067,7 +1067,7 @@ function Show-GuiRtsp {
         $btnOnvif.Enabled = $false; $status.ForeColor = $cDim; $status.Text = 'ONVIF: спрашиваю пути у камеры...'
         [System.Windows.Forms.Application]::DoEvents()
         try {
-            $onv = Get-OnvifStreamUri -Xaddr $xa -User $tbUser.Text -Password $tbPass.Text
+            $onv = Get-OnvifStreamUri -Xaddr $xa -User $tbUser.Text -Pass $tbPass.Text
             $state.rtsp = [string]$onv.Rtsp
             if ($onv.Snapshot) {
                 $su = [Uri]$onv.Snapshot
