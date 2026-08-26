@@ -61,6 +61,7 @@ $Programs = @(
     # --- Безопасность ---
     @{ Group = 'Безопасность'; Name = 'Malwarebytes';         Winget = 'Malwarebytes.Malwarebytes';       Url = 'https://www.malwarebytes.com/' }
     @{ Name = 'KeePassXC (пароли)';   Winget = 'KeePassXCTeam.KeePassXC';         Url = 'https://keepassxc.org/download/' }
+    @{ Name = 'MinerSearch (антимайнер)'; Download = 'https://github.com/BlendLog/MinerSearch/releases/download/v1.4.9.2/MinerSearch_v1.4.9.2.zip'; File = 'MinerSearch_v1.4.9.2.zip'; Url = 'https://github.com/BlendLog/MinerSearch/releases' }
     # --- Оболочка ---
     @{ Group = 'Оболочка'; Name = 'PowerShell 7';         Winget = 'Microsoft.PowerShell';            Url = 'https://github.com/PowerShell/PowerShell/releases' }
     @{ Name = 'Windows Terminal';     Winget = 'Microsoft.WindowsTerminal';       Url = 'https://github.com/microsoft/terminal/releases' }
@@ -1910,8 +1911,13 @@ function Get-LanDevices {
     if (-not $Base) { $Base = Get-LanBase }
     $Base = $Base.Trim().TrimEnd('.')
     # 1) асинхронный ping всех адресов — находит живых и наполняет ARP-кэш.
+    #    Ping держит неуправляемый ICMP-хэндл (IcmpCreateFile). Если его не
+    #    закрыть, за сессию с многими сканами хэндлы копятся, и каждый следующий
+    #    скан находит всё меньше устройств (пинги молча отваливаются). Поэтому
+    #    храним сам объект и в конце обязательно .Dispose().
     $pings = 1..254 | ForEach-Object {
-        [pscustomobject]@{ IP = "$Base.$_"; Task = (New-Object System.Net.NetworkInformation.Ping).SendPingAsync("$Base.$_", 500) }
+        $p = New-Object System.Net.NetworkInformation.Ping
+        [pscustomobject]@{ IP = "$Base.$_"; Ping = $p; Task = $p.SendPingAsync("$Base.$_", 500) }
     }
     if ($Progress) {
         # Опрос с обратным вызовом (GUI пампит DoEvents) — окно не «висит».
@@ -1928,6 +1934,7 @@ function Get-LanDevices {
     $alive = New-Object System.Collections.Generic.HashSet[string]
     foreach ($x in $pings) {
         try { if ($x.Task.Status -eq 'RanToCompletion' -and $x.Task.Result.Status -eq 'Success') { [void]$alive.Add($x.IP) } } catch { $null = $_ }
+        try { $x.Ping.Dispose() } catch { $null = $_ }
     }
     # 2) MAC из таблицы соседей (или arp -a). Часть камер молчит на ICMP, но после
     #    запроса всё равно оседает в ARP — их тоже покажем. ВАЖНО: берём только

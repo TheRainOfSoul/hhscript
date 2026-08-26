@@ -108,7 +108,8 @@ curl -fsSL https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/linux.s
   (Sysinternals, HWiNFO, CrystalDiskInfo/Mark, DiskGenius, TestDisk+PhotoRec,
   WizTree, Everything, Glow, **WinDirStat**), утилиты (**ShareX, PowerToys,
   FileZilla, WinMerge, Bitwarden**), стресс
-  (OCCT, FurMark), USB (Rufus, Ventoy), безопасность (Malwarebytes, KeePassXC),
+  (OCCT, FurMark), USB (Rufus, Ventoy), безопасность (Malwarebytes, KeePassXC,
+  **MinerSearch** — антимайнер, авто-загрузка с GitHub),
   оболочка (PowerShell 7, Windows Terminal) — через `winget`; плюс CCTV (Dahua
   ConfigTool/SmartPSS, Hikvision SADP/HiTools Delivery/iVMS-4200 — авто-загрузка
   с Я.Диска; **ONVIF Device Manager, Reolink, Uniview EZStation, EZVIZ, Amcrest**
