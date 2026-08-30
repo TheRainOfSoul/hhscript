@@ -308,7 +308,7 @@ CMDS=(
 # ===========================================================================
 
 sec_sysinfo() {
-  local os kern up cpu cores mem disk gw dns pub load
+  local os kern up cpu cores mem disk load
   os=$(. /etc/os-release 2>/dev/null; echo "${PRETTY_NAME:-$(uname -s)}")
   kern=$(uname -r)
   up=$(uptime -p 2>/dev/null || uptime)
@@ -317,13 +317,10 @@ sec_sysinfo() {
   cores=$(nproc 2>/dev/null)
   mem=$(free -h | awk '/^Mem:/{print $3" / "$2}')
   disk=$(df -h / | awk 'NR==2{print $3" / "$2" ("$5" занято)"}')
-  gw=$(ip route 2>/dev/null | awk '/default/{print $3; exit}')
-  dns=$(grep -h '^nameserver' /etc/resolv.conf 2>/dev/null | awk '{print $2}' | paste -sd', ' -)
   load=$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null)
-  pub=$(fetch - https://api.ipify.org 2>/dev/null); [ -z "$pub" ] && pub="н/д"
 
   {
-    printf '\n'
+    printf '\n=== Информация о системе ===\n\n'
     printf 'ОС:          %s\n' "$os"
     printf 'Ядро:        %s\n' "$kern"
     printf 'Хост:        %s\n' "$(hostname)"
@@ -331,6 +328,22 @@ sec_sysinfo() {
     printf 'CPU:         %s  (%s ядер)\n' "$cpu" "$cores"
     printf 'Память:      %s\n' "$mem"
     printf 'Диск /:      %s\n' "$disk"
+  } >/dev/tty
+  pause
+}
+
+sec_netinfo() {
+  local dev ip gw dns pub
+  dev=$(ip route 2>/dev/null | awk '/default/{print $5; exit}')
+  ip=$(ip -o -f inet addr show "$dev" 2>/dev/null | awk '{print $4; exit}')
+  gw=$(ip route 2>/dev/null | awk '/default/{print $3; exit}')
+  dns=$(grep -h '^nameserver' /etc/resolv.conf 2>/dev/null | awk '{print $2}' | paste -sd', ' -)
+  pub=$(fetch - https://api.ipify.org 2>/dev/null); [ -z "$pub" ] && pub="н/д"
+
+  {
+    printf '\n=== Информация о сети ===\n\n'
+    printf 'Интерфейс:   %s\n' "${dev:-н/д}"
+    printf 'IP-адрес:    %s\n' "${ip:-н/д}"
     printf 'Шлюз:        %s\n' "${gw:-н/д}"
     printf 'DNS:         %s\n' "${dns:-н/д}"
     printf 'Внешний IP:  %s\n' "$pub"
@@ -1815,7 +1828,8 @@ main() {
   local pick
   while :; do
     pick=$(ui_menu "Главное меню — $(hostname)" \
-      "Информация о системе и сеть" \
+      "Информация о системе" \
+      "Информация о сети" \
       "Установка программ (галочки)" \
       "Твики и настройка сервера" \
       "Службы и процессы" \
@@ -1830,7 +1844,8 @@ main() {
       "Выход") || break
     [ -n "$pick" ] && [ "$pick" != "Выход" ] && log "раздел: $pick"
     case "$pick" in
-      "Информация о системе и сеть") sec_sysinfo ;;
+      "Информация о системе")         sec_sysinfo ;;
+      "Информация о сети")            sec_netinfo ;;
       "Установка программ (галочки)") sec_install ;;
       "Твики и настройка сервера")    sec_tweaks ;;
       "Службы и процессы")            sec_services ;;
