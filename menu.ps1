@@ -68,6 +68,7 @@ $Programs = @(
     @{ Name = 'Windows Terminal';     Winget = 'Microsoft.WindowsTerminal';       Url = 'https://github.com/microsoft/terminal/releases' }
     # --- CCTV (в winget нет — открывается официальная страница загрузки) ---
     @{ Group = 'CCTV'; Name = 'Dahua ConfigTool'; Yadisk = 'https://disk.yandex.ru/d/c-K3fF2PNXBOmQ' }
+    @{ Name = 'Dahua ConfigTool (портативный)'; Yadisk = 'https://disk.yandex.ru/d/P5bZ_9TvtE4big' }
     @{ Name = 'Dahua SmartPSS Lite';  Yadisk = 'https://disk.yandex.ru/d/5B04_1OvSR7ChQ' }
     @{ Name = 'SADP (Hikvision)';     Yadisk = 'https://disk.yandex.ru/d/E8HX0NivegXgRQ' }
     @{ Name = 'HiTools Delivery (Hikvision)'; Yadisk = 'https://disk.yandex.ru/d/3LJjK0CS-HZqwQ' }
@@ -855,7 +856,7 @@ function Show-ProgramMenu {
     # Метки: пункты без winget откроют сайт загрузки — помечаем «(сайт)»
     $labels = @($Programs | ForEach-Object {
         if ($HasWinget -and $_.Winget) { $_.Name }
-        elseif ($_.Yadisk) { $_.Name + '  (Я.Диск)' }
+        elseif ($_.Yadisk) { $_.Name }
         elseif ($_.Layout) { $_.Name + '  (раскладка)' }
         else { $_.Name + '  (сайт)' }
     })
