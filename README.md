@@ -86,6 +86,42 @@ curl -fsSL https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/linux.s
 Весь ввод читается из `/dev/tty`, поэтому `curl … | bash` не мешает
 интерактиву. Принудительный режим: `HH_UI=plain` или `HH_UI=gum`.
 
+## macOS (MacBook)
+
+Полевой набор техника — `mac.sh` (Windows-GUI на WinForms под macOS перенести
+нельзя, поэтому это отдельный скрипт):
+
+```bash
+curl mac.hhtdom.ru | bash
+```
+
+Напрямую через GitHub:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/mac.sh | bash
+```
+
+Интерфейс — **нативные окна macOS через `osascript`** (меню, ввод, да/нет,
+чек-лист): навигация в окошках, вывод команд (сканы, `ffprobe`) — в Терминал.
+По SSH окон нет, поэтому идёт откат на текстовый режим (`HH_UI=plain` — форсить).
+Разделы:
+
+- **Информация о системе** — ОС/сборка (`sw_vers`), модель и CPU (`sysctl`),
+  память, диск, аптайм.
+- **Информация о сети** — интерфейс (`route`), IP (`ipconfig`), шлюз, DNS
+  (`scutil`), внешний IP, интерфейсы, слушающие порты (`lsof`).
+- **Диагностика сети (Network Doctor)** — тот же диагноз, что в Linux
+  (интерфейс → IP/APIPA → шлюз → интернет → DNS → внешний IP + вердикт),
+  на родных командах macOS; итог показывается нативным окном.
+- **Скан камер и NVR** — `nmap` по портам CCTV
+  (80/443/554/8000/37777/34567/8899/88).
+- **Проверка RTSP-камеры** — TCP-порт (`nc`) + `ffprobe` (разрешение/кодек).
+- **Установка утилит** — через **Homebrew** (`brew` ставится сам, если нет):
+  htop, btop, nmap, ffmpeg, wireshark, tmux, mtr, iperf3, arp-scan, jq, wget.
+
+Написан под bash 3.2 (в macOS `/bin/bash` старый). Нужен поддомен
+`mac.hhtdom.ru` на raw-файл — как `lin`.
+
 ## Состав меню
 
 - **Система:** Информация о ПК · MAS (активация) · Лёгкая чистка
