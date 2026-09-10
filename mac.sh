@@ -67,10 +67,11 @@ ui_msg() { printf '\n'; printf '%s\n' "$@"; }
 
 # ui_alert TEXT... — важное сообщение: окно с OK (osa) или текст + пауза (plain)
 ui_alert() {
-  local text="$*"
+  local text="$*" et
   if [ "$UI" = osa ]; then
+    et=$(osa_esc "$text")
     osascript >/dev/null 2>&1 <<OSA || true
-display dialog "$(osa_esc "$text")" with title "HH Toolbox" buttons {"OK"} default button "OK"
+display dialog "$et" with title "HH Toolbox" buttons {"OK"} default button "OK"
 OSA
     return 0
   fi
@@ -80,13 +81,14 @@ OSA
 
 # ui_yesno PROMPT  — 0 = да
 ui_yesno() {
-  local prompt=$1 ans
+  local prompt=$1 ans ep scr
   if [ "$UI" = osa ]; then
-    ans=$(osascript 2>/dev/null <<OSA
-set r to display dialog "$(osa_esc "$prompt")" with title "HH Toolbox" buttons {"Нет","Да"} default button "Да" cancel button "Нет"
+    ep=$(osa_esc "$prompt")
+    IFS= read -r -d '' scr <<OSA
+set r to display dialog "$ep" with title "HH Toolbox" buttons {"Нет","Да"} default button "Да" cancel button "Нет"
 return button returned of r
 OSA
-)
+    ans=$(printf '%s' "$scr" | osascript 2>/dev/null)
     if [ "$ans" = "Да" ]; then return 0; else return 1; fi
   fi
   printf '%s [y/N]: ' "$prompt" >/dev/tty
@@ -96,13 +98,14 @@ OSA
 
 # ui_input PROMPT [DEFAULT]  — строка в stdout (пусто = отмена)
 ui_input() {
-  local prompt=$1 def=${2:-} ans
+  local prompt=$1 def=${2:-} ans ep ed scr
   if [ "$UI" = osa ]; then
-    ans=$(osascript 2>/dev/null <<OSA
-set r to display dialog "$(osa_esc "$prompt")" default answer "$(osa_esc "$def")" with title "HH Toolbox" buttons {"Отмена","OK"} default button "OK" cancel button "Отмена"
+    ep=$(osa_esc "$prompt"); ed=$(osa_esc "$def")
+    IFS= read -r -d '' scr <<OSA
+set r to display dialog "$ep" default answer "$ed" with title "HH Toolbox" buttons {"Отмена","OK"} default button "OK" cancel button "Отмена"
 return text returned of r
 OSA
-) || return 1
+    ans=$(printf '%s' "$scr" | osascript 2>/dev/null) || return 1
     printf '%s' "$ans"
     return 0
   fi
@@ -117,9 +120,9 @@ OSA
 ui_menu() {
   local title=$1; shift
   if [ "$UI" = osa ]; then
-    local lst; lst=$(osa_list "$@")
+    local lst et; lst=$(osa_list "$@"); et=$(osa_esc "$title")
     osascript 2>/dev/null <<OSA
-set r to choose from list {$lst} with title "HH Toolbox" with prompt "$(osa_esc "$title")" OK button name "Выбрать" cancel button name "Отмена"
+set r to choose from list {$lst} with title "HH Toolbox" with prompt "$et" OK button name "Выбрать" cancel button name "Отмена"
 if r is false then return ""
 return item 1 of r
 OSA
@@ -146,15 +149,15 @@ ui_checklist() {
   local pairs=("$@") labels=() p i
   for p in "${pairs[@]}"; do labels+=("${p#*|}"); done
   if [ "$UI" = osa ]; then
-    local lst sel line
-    lst=$(osa_list "${labels[@]}")
-    sel=$(osascript 2>/dev/null <<OSA
-set r to choose from list {$lst} with title "HH Toolbox" with prompt "$(osa_esc "$title")" with multiple selections allowed OK button name "Установить" cancel button name "Отмена"
+    local lst sel line et scr
+    lst=$(osa_list "${labels[@]}"); et=$(osa_esc "$title")
+    IFS= read -r -d '' scr <<OSA
+set r to choose from list {$lst} with title "HH Toolbox" with prompt "$et" with multiple selections allowed OK button name "Установить" cancel button name "Отмена"
 if r is false then return ""
 set AppleScript's text item delimiters to linefeed
 return r as text
 OSA
-)
+    sel=$(printf '%s' "$scr" | osascript 2>/dev/null)
     [ -n "$sel" ] || return 1
     while IFS= read -r line; do
       [ -n "$line" ] || continue
