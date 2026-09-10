@@ -280,6 +280,29 @@ default_cidr() {
 
 host_name() { scutil --get ComputerName 2>/dev/null || hostname; }
 
+# выполнить команду с правами администратора: окно пароля (osa) или sudo (plain)
+run_admin() {
+  local cmd="$*" ec
+  if [ "$UI" = osa ]; then
+    ec=$(osa_esc "$cmd")
+    osascript -e "do shell script \"$ec\" with administrator privileges" >/dev/null 2>&1
+  else
+    sudo sh -c "$cmd"
+  fi
+}
+
+# вывести имена *.plist из переданных каталогов (без ls — безопасно для shellcheck)
+list_plists() {
+  local d f n=0
+  for d in "$@"; do
+    for f in "$d"/*.plist; do
+      [ -e "$f" ] || continue
+      printf '  %s\n' "${f##*/}"; n=$((n + 1))
+    done
+  done
+  [ "$n" -gt 0 ] || printf '  (пусто)\n'
+}
+
 # строка отчёта Network Doctor: ok/bad/warn + подпись + деталь
 dl() {
   local m=""
@@ -469,6 +492,111 @@ nd_speedtest() {
   pause
 }
 
+# Батарея и железо (только чтение) — частый запрос по ноутбукам
+sec_hardware() {
+  local model serial cpu cores mem_b mem_g
+  model=$(sysctl -n hw.model 2>/dev/null)
+  serial=$(ioreg -l 2>/dev/null | awk -F'"' '/IOPlatformSerialNumber/{print $4; exit}')
+  cpu=$(sysctl -n machdep.cpu.brand_string 2>/dev/null); [ -n "$cpu" ] || cpu="$model"
+  cores=$(sysctl -n hw.ncpu 2>/dev/null)
+  mem_b=$(sysctl -n hw.memsize 2>/dev/null)
+  if [ -n "$mem_b" ]; then mem_g="$(( mem_b / 1024 / 1024 / 1024 )) ГБ"; else mem_g="н/д"; fi
+  {
+    printf '\n=== Железо ===\n\n'
+    printf 'Модель:    %s\n' "$model"
+    printf 'Серийный:  %s\n' "${serial:-н/д}"
+    printf 'CPU:       %s  (%s ядер)\n' "$cpu" "$cores"
+    printf 'Память:    %s\n' "$mem_g"
+    printf '\n=== Батарея ===\n'
+    if system_profiler SPPowerDataType 2>/dev/null | grep -iE 'Cycle Count|Condition|Maximum Capacity|Fully Charged|State of Charge'; then :; else printf '  (нет данных о батарее — возможно, это не ноутбук)\n'; fi
+    printf '\n=== Диск / ===\n'
+    diskutil info / 2>/dev/null | grep -iE 'Device Node|Volume Name|Container Total Space|Volume Free Space|SMART Status' | sed 's/^ *//'
+  }
+  pause
+}
+
+# Автозагрузка: что стартует при входе / в фоне
+sec_startup() {
+  local pick items=() f choice
+  while :; do
+    pick=$(ui_menu "Автозагрузка Mac" \
+      "Элементы входа (Login Items)" \
+      "Агенты автозапуска (LaunchAgents/Daemons)" \
+      "Отключить пользовательский агент" \
+      "← Назад") || return
+    case "$pick" in
+      "Элементы входа"*)
+        printf '\n=== Login Items (Системные настройки → Вход) ===\n'
+        osascript -e 'tell application "System Events" to get the name of every login item' 2>/dev/null \
+          | tr ',' '\n' | sed 's/^ *//;s/^/  /'
+        printf '(если пусто — либо их нет, либо не выдан доступ к System Events)\n'
+        pause ;;
+      "Агенты автозапуска"*)
+        printf '\n=== Пользовательские (~/Library/LaunchAgents) ===\n'
+        list_plists "$HOME/Library/LaunchAgents"
+        printf '\n=== Системные (/Library/LaunchAgents, LaunchDaemons) ===\n'
+        list_plists /Library/LaunchAgents /Library/LaunchDaemons
+        pause ;;
+      "Отключить пользовательский агент")
+        items=()
+        for f in "$HOME/Library/LaunchAgents/"*.plist; do [ -e "$f" ] && items+=("${f##*/}"); done
+        if [ "${#items[@]}" -eq 0 ]; then ui_alert "Пользовательских агентов нет."; continue; fi
+        items+=("← Отмена")
+        choice=$(ui_menu "Какой агент отключить?" "${items[@]}") || continue
+        { [ -z "$choice" ] || [ "$choice" = "← Отмена" ]; } && continue
+        f="$HOME/Library/LaunchAgents/$choice"
+        if ui_yesno "Отключить $choice? Файл станет .disabled (вернуть — убрать суффикс)."; then
+          launchctl unload "$f" 2>/dev/null
+          if mv "$f" "$f.disabled" 2>/dev/null; then log "startup off: $choice"; ui_alert "Отключено: $choice"; else ui_alert "Не удалось (нет прав?)."; fi
+        fi ;;
+      *) return ;;
+    esac
+  done
+}
+
+# Обслуживание и очистка — запрос №1 в поддержке
+sec_maint() {
+  local pick
+  while :; do
+    pick=$(ui_menu "Обслуживание и очистка Mac" \
+      "Что занимает место (обзор)" \
+      "Очистить кэши приложений" \
+      "Очистить корзину" \
+      "Homebrew cleanup" \
+      "Сбросить DNS-кэш" \
+      "Освободить память (purge)" \
+      "← Назад") || return
+    case "$pick" in
+      "Что занимает место"*)
+        printf '\n=== Диск ===\n'; df -h / | awk 'NR==1 || NR==2'
+        printf '\n=== Крупнейшие папки в %s (может занять минуту) ===\n' "$HOME"
+        du -sh "$HOME"/* "$HOME"/Library/Caches 2>/dev/null | sort -hr | head -n 20
+        pause ;;
+      "Очистить кэши"*)
+        if ui_yesno "Удалить содержимое ~/Library/Caches? Приложения пересоздадут его."; then
+          rm -rf "${HOME:?}/Library/Caches/"* 2>/dev/null
+          log "clean: user caches"; ui_alert "Кэши приложений очищены."
+        fi ;;
+      "Очистить корзину")
+        if ui_yesno "Очистить корзину?"; then
+          rm -rf "${HOME:?}/.Trash/"* 2>/dev/null
+          ui_alert "Корзина очищена."
+        fi ;;
+      "Homebrew cleanup")
+        if command -v brew >/dev/null 2>&1; then
+          printf '\n==> brew cleanup\n\n'; brew cleanup; pause
+        else ui_alert "Homebrew не установлен."; fi ;;
+      "Сбросить DNS-кэш")
+        if run_admin "dscacheutil -flushcache; killall -HUP mDNSResponder"; then
+          ui_alert "DNS-кэш сброшен."
+        else ui_alert "Не удалось (нужен пароль администратора)."; fi ;;
+      "Освободить память (purge)")
+        if run_admin "purge"; then ui_alert "Память освобождена (purge)."; else ui_alert "Не удалось (purge требует прав/утилиты)."; fi ;;
+      *) return ;;
+    esac
+  done
+}
+
 # скачать один установщик Office (.pkg) и предложить открыть
 office_download() {
   local label=$1 url=$2 file=$3 kind=$4 dl href name out dir
@@ -566,6 +694,9 @@ main() {
       "Информация о сети" \
       "Диагностика сети (Network Doctor)" \
       "Скорость интернета" \
+      "Батарея и железо" \
+      "Автозагрузка" \
+      "Обслуживание и очистка" \
       "Скан камер и NVR" \
       "Проверка RTSP-камеры" \
       "Установка утилит (Homebrew)" \
@@ -578,6 +709,9 @@ main() {
       "Информация о сети")                 sec_netinfo ;;
       "Диагностика сети (Network Doctor)") nd_doctor ;;
       "Скорость интернета")                nd_speedtest ;;
+      "Батарея и железо")                  sec_hardware ;;
+      "Автозагрузка")                      sec_startup ;;
+      "Обслуживание и очистка")            sec_maint ;;
       "Скан камер и NVR")                  nd_camscan ;;
       "Проверка RTSP-камеры")              nd_rtsp ;;
       "Установка утилит (Homebrew)")       sec_install ;;
