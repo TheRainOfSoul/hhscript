@@ -118,6 +118,10 @@ curl -fsSL https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/mac.sh 
 - **Проверка RTSP-камеры** — TCP-порт (`nc`) + `ffprobe` (разрешение/кодек).
 - **Установка утилит** — через **Homebrew** (`brew` ставится сам, если нет):
   htop, btop, nmap, ffmpeg, wireshark, tmux, mtr, iperf3, arp-scan, jq, wget.
+- **Office для Mac (загрузка)** — прямые `.pkg`-установщики Microsoft
+  (весь Office 365, Word, Excel, PowerPoint, Outlook) + инструменты с
+  Яндекс.Диска: **сброс Office** (reset) и **сериализатор** (Volume License).
+  Качает в `~/Downloads` и предлагает открыть установщик.
 
 Написан под bash 3.2 (в macOS `/bin/bash` старый). Нужен поддомен
 `mac.hhtdom.ru` на raw-файл — как `lin`.

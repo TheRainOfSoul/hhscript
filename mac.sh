@@ -210,6 +210,19 @@ BREW_ITEMS=(
   "wget|wget — загрузка файлов"
 )
 
+# Office для Mac (.pkg):  "label|url|файл|kind"
+#   kind=ms — прямая ссылка Microsoft (fwlink -> .pkg)
+#   kind=ya — публичная ссылка Яндекс.Диска (имя берём из API)
+OFFICE_ITEMS=(
+  "Office 365 (весь пакет)|https://go.microsoft.com/fwlink/p/?linkid=2009112|Microsoft_Office.pkg|ms"
+  "Word|https://go.microsoft.com/fwlink/p/?linkid=525134|Microsoft_Word.pkg|ms"
+  "Excel|https://go.microsoft.com/fwlink/p/?linkid=525135|Microsoft_Excel.pkg|ms"
+  "PowerPoint|https://go.microsoft.com/fwlink/p/?linkid=525136|Microsoft_PowerPoint.pkg|ms"
+  "Outlook|https://go.microsoft.com/fwlink/p/?linkid=525137|Microsoft_Outlook.pkg|ms"
+  "Сброс Office (reset)|https://disk.yandex.ru/d/tfFI9m-HfgDb0g||ya"
+  "Сериализатор (Volume License)|https://disk.yandex.ru/d/7ke9FErmY_77BQ||ya"
+)
+
 # ===========================================================================
 # ХЕЛПЕРЫ macOS
 # ===========================================================================
@@ -227,6 +240,18 @@ mac_gw() { route -n get default 2>/dev/null | awk '/gateway:/{print $2; exit}'; 
 mac_dns() { scutil --dns 2>/dev/null | awk '/nameserver\[[0-9]+\]/{print $3}' | awk '!s[$0]++' | paste -sd', ' -; }
 
 ext_ip() { curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null; }
+
+# Яндекс.Диск: прямая ссылка на скачивание по публичному URL (свежая, без токена)
+yadisk_href() {
+  curl -s -G "https://cloud-api.yandex.net/v1/disk/public/resources/download" --data-urlencode "public_key=$1" \
+    | sed -n 's/.*"href":"\([^"]*\)".*/\1/p' | sed 's#\\/#/#g'
+}
+
+# Яндекс.Диск: имя файла по публичному URL
+yadisk_name() {
+  curl -s -G "https://cloud-api.yandex.net/v1/disk/public/resources" --data-urlencode "public_key=$1" \
+    | grep -o '"name":"[^"]*"' | head -1 | sed 's/"name":"//; s/"$//'
+}
 
 # текущая подсеть /24 для сканов по умолчанию
 default_cidr() {
@@ -408,6 +433,50 @@ sec_install() {
   pause
 }
 
+# скачать один установщик Office (.pkg) и предложить открыть
+office_download() {
+  local label=$1 url=$2 file=$3 kind=$4 dl href name out dir
+  dir="$HOME/Downloads"; mkdir -p "$dir"
+  if [ "$kind" = ya ]; then
+    ui_msg "Получаю ссылку с Яндекс.Диска для «$label»..."
+    href=$(yadisk_href "$url")
+    if [ -z "$href" ]; then ui_alert "Не удалось получить ссылку с Яндекс.Диска для «$label»."; return; fi
+    name=$(yadisk_name "$url"); [ -n "$name" ] || name="${label}.pkg"
+    out="$dir/$name"; dl="$href"
+  else
+    out="$dir/$file"; dl="$url"
+  fi
+  printf '\nСкачиваю «%s»\n  -> %s\n(большой файл, несколько минут)\n\n' "$label" "$out"
+  if curl -fL --retry 2 -o "$out" "$dl"; then
+    ui_msg "Готово: $out"
+    if ui_yesno "Открыть установщик «$label» сейчас?"; then open "$out"; fi
+  else
+    ui_alert "Ошибка загрузки «$label»."
+  fi
+}
+
+sec_office() {
+  local labels=() it label url file kind pick
+  while :; do
+    labels=()
+    for it in "${OFFICE_ITEMS[@]}"; do
+      IFS='|' read -r label url file kind <<< "$it"
+      labels+=("$label")
+    done
+    labels+=("← Назад")
+    pick=$(ui_menu "Office для Mac — что скачать (.pkg)" "${labels[@]}") || return
+    { [ -z "$pick" ] || [ "$pick" = "← Назад" ]; } && return
+    for it in "${OFFICE_ITEMS[@]}"; do
+      IFS='|' read -r label url file kind <<< "$it"
+      if [ "$label" = "$pick" ]; then
+        log "office: $label"
+        office_download "$label" "$url" "$file" "$kind"
+        break
+      fi
+    done
+  done
+}
+
 nd_camscan() {
   if ! command -v nmap >/dev/null 2>&1; then
     if ui_yesno "Нужен nmap (через Homebrew). Установить сейчас?"; then
@@ -463,6 +532,7 @@ main() {
       "Скан камер и NVR" \
       "Проверка RTSP-камеры" \
       "Установка утилит (Homebrew)" \
+      "Office для Mac (загрузка)" \
       "Выход") || break
     [ -n "$pick" ] && [ "$pick" != "Выход" ] && log "раздел: $pick"
     case "$pick" in
@@ -472,6 +542,7 @@ main() {
       "Скан камер и NVR")                  nd_camscan ;;
       "Проверка RTSP-камеры")              nd_rtsp ;;
       "Установка утилит (Homebrew)")       sec_install ;;
+      "Office для Mac (загрузка)")         sec_office ;;
       "Выход"|"") break ;;
     esac
   done
