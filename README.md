@@ -113,11 +113,16 @@ curl -fsSL https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/mac.sh 
 - **Диагностика сети (Network Doctor)** — тот же диагноз, что в Linux
   (интерфейс → IP/APIPA → шлюз → интернет → DNS → внешний IP + вердикт),
   на родных командах macOS; итог показывается нативным окном.
+- **Скорость интернета** — нативный `networkQuality` (macOS 12+): скорость
+  вверх/вниз и задержка, без установки чего-либо.
 - **Скан камер и NVR** — `nmap` по портам CCTV
   (80/443/554/8000/37777/34567/8899/88).
 - **Проверка RTSP-камеры** — TCP-порт (`nc`) + `ffprobe` (разрешение/кодек).
 - **Установка утилит** — через **Homebrew** (`brew` ставится сам, если нет):
   htop, btop, nmap, ffmpeg, wireshark, tmux, mtr, iperf3, arp-scan, jq, wget.
+- **Приложения (GUI, Homebrew Cask)** — для настройки чужого мака / поддержки:
+  Chrome, Firefox, AnyDesk, RustDesk, TeamViewer, VLC, Wireshark,
+  The Unarchiver, Keka, AppCleaner, Telegram, Zoom.
 - **Office для Mac (загрузка)** — прямые `.pkg`-установщики Microsoft
   (весь Office 365, Word, Excel, PowerPoint, Outlook) + инструменты с
   Яндекс.Диска: **сброс Office** (reset) и **сериализатор** (Volume License).

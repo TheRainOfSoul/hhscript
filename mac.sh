@@ -210,6 +210,22 @@ BREW_ITEMS=(
   "wget|wget — загрузка файлов"
 )
 
+# GUI-приложения Homebrew Cask:  "cask|описание"
+CASK_ITEMS=(
+  "google-chrome|Google Chrome — браузер"
+  "firefox|Firefox — браузер"
+  "anydesk|AnyDesk — удалённый доступ"
+  "rustdesk|RustDesk — удалённый доступ (open-source)"
+  "teamviewer|TeamViewer — удалённый доступ"
+  "vlc|VLC — плеер (RTSP/видео)"
+  "wireshark|Wireshark — анализ трафика (GUI)"
+  "the-unarchiver|The Unarchiver — распаковка архивов"
+  "keka|Keka — архиватор"
+  "appcleaner|AppCleaner — полное удаление программ"
+  "telegram|Telegram — мессенджер"
+  "zoom|Zoom — видеосвязь"
+)
+
 # Office для Mac (.pkg):  "label|url|файл|kind"
 #   kind=ms — прямая ссылка Microsoft (fwlink -> .pkg)
 #   kind=ya — публичная ссылка Яндекс.Диска (имя берём из API)
@@ -417,19 +433,36 @@ ensure_brew() {
   command -v brew >/dev/null 2>&1
 }
 
-sec_install() {
-  if ! ensure_brew; then ui_msg "Homebrew нужен для установки утилит."; pause; return; fi
+# общий установщик через brew: $1 = "" (формула) или "--cask", $2 = заголовок,
+# далее — пункты "tag|описание"
+brew_install_from() {
+  local flag=$1 title=$2; shift 2
+  if ! ensure_brew; then ui_msg "Homebrew нужен для установки."; pause; return; fi
   local sel tags=() t
-  sel=$(ui_checklist "Утилиты (Homebrew) — отметь нужное" "${BREW_ITEMS[@]}") || { ui_msg "Ничего не выбрано."; return; }
+  sel=$(ui_checklist "$title" "$@") || { ui_msg "Ничего не выбрано."; return; }
   while IFS= read -r t; do [ -n "$t" ] && tags+=("$t"); done <<< "$sel"
   if [ "${#tags[@]}" -eq 0 ]; then ui_msg "Ничего не выбрано."; return; fi
   if ! ui_yesno "Установить: ${tags[*]}?"; then return; fi
-  log "brew install: ${tags[*]}"
+  log "brew install $flag: ${tags[*]}"
   for t in "${tags[@]}"; do
-    printf '\n==> brew install %s\n' "$t"
-    brew install "$t"
+    printf '\n==> brew install %s %s\n' "$flag" "$t"
+    if [ -n "$flag" ]; then brew install "$flag" "$t"; else brew install "$t"; fi
   done
   ui_alert "Готово. Установлено: ${tags[*]}"
+  pause
+}
+
+sec_install() { brew_install_from "" "Утилиты (Homebrew) — отметь нужное" "${BREW_ITEMS[@]}"; }
+sec_apps()    { brew_install_from "--cask" "Приложения (GUI) — отметь нужное" "${CASK_ITEMS[@]}"; }
+
+# нативный спидтест macOS 12+ (ставить ничего не нужно)
+nd_speedtest() {
+  if ! command -v networkQuality >/dev/null 2>&1; then
+    ui_alert "networkQuality есть только в macOS 12 (Monterey) и новее. Обнови систему."
+    return
+  fi
+  printf '\nЗамер скорости интернета (networkQuality)\nобычно 15-30 секунд, дождись результата...\n\n'
+  networkQuality
   pause
 }
 
@@ -529,9 +562,11 @@ main() {
       "Информация о системе" \
       "Информация о сети" \
       "Диагностика сети (Network Doctor)" \
+      "Скорость интернета" \
       "Скан камер и NVR" \
       "Проверка RTSP-камеры" \
       "Установка утилит (Homebrew)" \
+      "Приложения (GUI, Homebrew)" \
       "Office для Mac (загрузка)" \
       "Выход") || break
     [ -n "$pick" ] && [ "$pick" != "Выход" ] && log "раздел: $pick"
@@ -539,9 +574,11 @@ main() {
       "Информация о системе")              sec_sysinfo ;;
       "Информация о сети")                 sec_netinfo ;;
       "Диагностика сети (Network Doctor)") nd_doctor ;;
+      "Скорость интернета")                nd_speedtest ;;
       "Скан камер и NVR")                  nd_camscan ;;
       "Проверка RTSP-камеры")              nd_rtsp ;;
       "Установка утилит (Homebrew)")       sec_install ;;
+      "Приложения (GUI, Homebrew)")        sec_apps ;;
       "Office для Mac (загрузка)")         sec_office ;;
       "Выход"|"") break ;;
     esac
