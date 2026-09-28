@@ -180,6 +180,75 @@ function Invoke-Remote {
     }
 }
 
+# MAS (get.activated.win) в unattended-режиме: флаги отдаём самому скрипту, как
+# в официальной документации — &([ScriptBlock]::Create((irm ...))) /HWID /Ohook.
+# /HWID = Windows (цифровая лицензия навсегда), /Ohook = Office (навсегда).
+function Invoke-MAS {
+    param([string[]]$Flags)
+    try {
+        Write-Host "`n  Загрузка MAS (get.activated.win)..." -ForegroundColor DarkGray
+        Write-Host "  Режим: $($Flags -join ' ')  (нужны права администратора)`n" -ForegroundColor DarkGray
+        $text = Get-RemoteText 'https://get.activated.win'
+        if (-not $text) { Write-Host '  Не удалось загрузить MAS.' -ForegroundColor Red; return }
+        & ([ScriptBlock]::Create($text)) @Flags
+    } catch {
+        Write-Host "`n  Ошибка MAS: $($_.Exception.Message)" -ForegroundColor Red
+    }
+}
+
+# Сброс ID AnyDesk (порт renew_anydesk_id.bat): чистит service/system-конфиги, в
+# которых зашит ID, сохраняя user.conf (алиас/настройки). AnyDesk при старте
+# генерит новый ID. Добавлена остановка службы — иначе конфиги заняты и не чистятся.
+function Reset-AnyDeskId {
+    $pd = Join-Path $env:ProgramData 'AnyDesk'
+    $ad = Join-Path $env:APPDATA   'AnyDesk'
+    $cands = @()
+    if (${env:ProgramFiles(x86)}) { $cands += (Join-Path ${env:ProgramFiles(x86)} 'AnyDesk\AnyDesk.exe') }
+    if ($env:ProgramFiles)        { $cands += (Join-Path $env:ProgramFiles 'AnyDesk\AnyDesk.exe') }
+    $cands += (Join-Path $ad 'AnyDesk.exe')
+    $exe = $cands | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if (-not $exe) {
+        $cmd = Get-Command AnyDesk.exe -ErrorAction SilentlyContinue
+        if ($cmd) { $exe = $cmd.Source }
+    }
+    if (-not $exe) { Write-Host "`n   AnyDesk.exe не найден — установи AnyDesk сначала." -ForegroundColor Yellow; return }
+
+    Write-Host "`n   Сброс ID AnyDesk..." -ForegroundColor Cyan
+    # 1) стоп службы и процессов (иначе конфиги заняты)
+    Get-Service -Name AnyDesk -ErrorAction SilentlyContinue | Stop-Service -Force -ErrorAction SilentlyContinue
+    Stop-Process -Name AnyDesk -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Milliseconds 800
+
+    # 2) бэкап user.conf (его сохраняем)
+    $backup = Join-Path $pd 'backup'
+    try { New-Item -ItemType Directory -Force -Path $backup | Out-Null } catch { $null = $_ }
+    $userConf = Join-Path $ad 'user.conf'
+    if (Test-Path $userConf) { Copy-Item $userConf (Join-Path $backup 'user.conf') -Force -ErrorAction SilentlyContinue }
+
+    # 3) удалить конфиги с ID в ProgramData и AppData (-File не трогает папку backup)
+    foreach ($dir in @($pd, $ad)) {
+        if (Test-Path $dir) {
+            Get-ChildItem -Path $dir -File -Force -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    # 4) старт -> дать сгенерить новый ID -> стоп
+    Write-Host "   Запускаю AnyDesk для генерации нового ID..." -ForegroundColor DarkGray
+    Start-Process $exe
+    Start-Sleep -Seconds 5
+    Stop-Process -Name AnyDesk -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Milliseconds 500
+
+    # 5) вернуть user.conf и снова запустить
+    $bUser = Join-Path $backup 'user.conf'
+    if (Test-Path $bUser) {
+        try { New-Item -ItemType Directory -Force -Path $ad | Out-Null } catch { $null = $_ }
+        Copy-Item $bUser $userConf -Force -ErrorAction SilentlyContinue
+    }
+    Start-Process $exe
+    Write-Host "   Готово. Новый ID появится в окне AnyDesk (настройки сохранены)." -ForegroundColor Green
+}
+
 # --- Автоустановка winget (App Installer), если его нет --------------
 # На чистой/LTSC Windows winget часто отсутствует и установки молча падают.
 # Confirm-Winget вызывается перед winget-операциями: один раз за сеанс пытается
@@ -2362,8 +2431,12 @@ $Menu = @(
     @{ Label = 'Проверка/восстановление системы (DISM + SFC)';   Action = { Repair-System; Wait-Continue }; Admin = $true }
     @{ Label = 'Обновление драйверов (Dell/HP/Lenovo/Intel)';    Action = { Invoke-DriverUpdate; Wait-Continue }; Admin = $true }
     @{ Label = 'Проверка на вирусы / майнеры';                  Action = { Show-SecurityScan; Wait-Continue } }
+    @{ Label = 'Сбросить ID AnyDesk (новый ID, настройки сохранит)'; Action = { Reset-AnyDeskId; Wait-Continue }; Admin = $true }
     @{ Section = 'Установка и активация' }
-    @{ Label = 'MAS — активация Windows / Office';               Action = { Invoke-Remote 'https://get.activated.win'; Wait-Continue } }
+    @{ Label = 'MAS — активация Windows / Office (меню)';         Action = { Invoke-Remote 'https://get.activated.win'; Wait-Continue } }
+    @{ Label = 'Активировать Windows (одной кнопкой)';           Action = { Invoke-MAS @('/HWID'); Wait-Continue }; Admin = $true }
+    @{ Label = 'Активировать Office (одной кнопкой)';            Action = { Invoke-MAS @('/Ohook'); Wait-Continue }; Admin = $true }
+    @{ Label = 'Активировать Windows + Office (одной кнопкой)';  Action = { Invoke-MAS @('/HWID', '/Ohook'); Wait-Continue }; Admin = $true; Color = 'Magenta' }
     @{ Label = 'Новый ПК — первичная настройка';                Action = { Invoke-NewPC; Wait-Continue }; Admin = $true; Color = 'Magenta' }
 )
 
