@@ -132,8 +132,8 @@ curl -fsSL https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/mac.sh 
   Chrome, Firefox, AnyDesk, RustDesk, TeamViewer, VLC, Wireshark,
   The Unarchiver, Keka, AppCleaner, Telegram, Zoom.
 - **Office для Mac (загрузка)** — прямые `.pkg`-установщики Microsoft
-  (весь Office 365, Word, Excel, PowerPoint, Outlook) + инструменты с
-  Яндекс.Диска: **сброс Office** (reset) и **сериализатор** (Volume License).
+  (весь Office 365, Word, Excel, PowerPoint, Outlook) + инструменты:
+  **сброс Office** (reset) и **сериализатор** (Volume License).
   Качает в `~/Downloads` и предлагает открыть установщик.
 
 Написан под bash 3.2 (в macOS `/bin/bash` старый). Нужен поддомен
@@ -172,8 +172,9 @@ curl -fsSL https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/mac.sh 
   (OCCT, FurMark), USB (Rufus, Ventoy), безопасность (Malwarebytes, KeePassXC,
   **MinerSearch** — антимайнер, авто-загрузка с GitHub),
   оболочка (PowerShell 7, Windows Terminal) — через `winget`; плюс CCTV (Dahua
-  ConfigTool/SmartPSS, Hikvision SADP/HiTools Delivery/iVMS-4200 — авто-загрузка
-  с Я.Диска; **ONVIF Device Manager, Reolink, Uniview EZStation, EZVIZ, Amcrest**
+  ConfigTool/SmartPSS, Hikvision SADP/HiTools Delivery/iVMS-4200 — прямая
+  авто-загрузка со своего сервера `files.dg-solutions.am`;
+  **ONVIF Device Manager, Reolink, Uniview EZStation, EZVIZ, Amcrest**
   — через winget/страницу загрузки), офис/документы (**ABBYY FineReader PDF 16,
   Adobe Acrobat Pro DC, Adobe InDesign, WinRAR** — авто-загрузка с Я.Диска).
   Установленное через winget **запускается сразу после установки**; повторно

@@ -238,8 +238,8 @@ OFFICE_ITEMS=(
   "Excel|https://go.microsoft.com/fwlink/p/?linkid=525135|Microsoft_Excel.pkg|ms"
   "PowerPoint|https://go.microsoft.com/fwlink/p/?linkid=525136|Microsoft_PowerPoint.pkg|ms"
   "Outlook|https://go.microsoft.com/fwlink/p/?linkid=525137|Microsoft_Outlook.pkg|ms"
-  "Сброс Office (reset)|https://disk.yandex.ru/d/tfFI9m-HfgDb0g||ya"
-  "Сериализатор (Volume License)|https://disk.yandex.ru/d/7ke9FErmY_77BQ||ya"
+  "Сброс Office (reset)|https://files.dg-solutions.am/HHScript/1.%20Microsoft_Office_Reset_2.0.0.pkg|Microsoft_Office_Reset_2.0.0.pkg|ms"
+  "Сериализатор (Volume License)|https://files.dg-solutions.am/HHScript/2.%20Microsoft_Office_LTSC_2024_VL_Serializer.pkg|Microsoft_Office_LTSC_2024_VL_Serializer.pkg|ms"
 )
 
 # ===========================================================================

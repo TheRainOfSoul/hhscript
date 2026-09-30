@@ -52,7 +52,7 @@ $Programs = @(
     @{ Name = 'TestDisk + PhotoRec (восстановление)'; Winget = 'CGSecurity.TestDisk'; Url = 'https://www.cgsecurity.org/wiki/TestDisk_Download' }
     @{ Name = 'WizTree (диск)';       Winget = 'AntibodySoftware.WizTree';        Url = 'https://diskanalyzer.com/download' }
     @{ Name = 'Everything (поиск)';   Winget = 'voidtools.Everything';            Url = 'https://www.voidtools.com/downloads/' }
-    @{ Name = 'Glow (анализ системы)'; Yadisk = 'https://disk.yandex.ru/d/yOWdlEZZlBDysw' }
+    @{ Name = 'Glow (анализ системы)'; Download = 'https://files.dg-solutions.am/HHScript/Glow_v26.11.zip'; File = 'Glow_v26.11.zip' }
     # --- Стресс / бенчмарк ---
     @{ Group = 'Стресс / бенчмарк'; Name = 'OCCT (стресс-тест)';   Winget = 'OCBase.OCCT.Personal';            Url = 'https://www.ocbase.com/' }
     @{ Name = 'FurMark (стресс GPU)'; Winget = 'Geeks3D.FurMark.2';               Url = 'https://geeks3d.com/furmark/' }
@@ -67,12 +67,12 @@ $Programs = @(
     @{ Group = 'Оболочка'; Name = 'PowerShell 7';         Winget = 'Microsoft.PowerShell';            Url = 'https://github.com/PowerShell/PowerShell/releases' }
     @{ Name = 'Windows Terminal';     Winget = 'Microsoft.WindowsTerminal';       Url = 'https://github.com/microsoft/terminal/releases' }
     # --- CCTV (в winget нет — открывается официальная страница загрузки) ---
-    @{ Group = 'CCTV'; Name = 'Dahua ConfigTool'; Yadisk = 'https://disk.yandex.ru/d/c-K3fF2PNXBOmQ' }
-    @{ Name = 'Dahua ConfigTool (портативный)'; Yadisk = 'https://disk.yandex.ru/d/P5bZ_9TvtE4big' }
-    @{ Name = 'Dahua SmartPSS Lite';  Yadisk = 'https://disk.yandex.ru/d/5B04_1OvSR7ChQ' }
-    @{ Name = 'SADP (Hikvision)';     Yadisk = 'https://disk.yandex.ru/d/E8HX0NivegXgRQ' }
-    @{ Name = 'HiTools Delivery (Hikvision)'; Yadisk = 'https://disk.yandex.ru/d/3LJjK0CS-HZqwQ' }
-    @{ Name = 'iVMS-4200 (Hikvision)'; Yadisk = 'https://disk.yandex.ru/d/U8nd7S3DwH8mtw' }
+    @{ Group = 'CCTV'; Name = 'Dahua ConfigTool'; Download = 'https://files.dg-solutions.am/HHScript/General_ConfigTool_ChnEng_V5.001.0000006.2.R.20250922.exe'; File = 'General_ConfigTool_ChnEng_V5.001.0000006.2.R.20250922.exe' }
+    @{ Name = 'Dahua ConfigTool (портативный)'; Download = 'https://files.dg-solutions.am/HHScript/ConfigTool.exe'; File = 'ConfigTool.exe' }
+    @{ Name = 'Dahua SmartPSS Lite';  Download = 'https://files.dg-solutions.am/HHScript/General_SmartPSSLite_V1.006.0000000.1.R.260305.exe'; File = 'General_SmartPSSLite_V1.006.0000000.1.R.260305.exe' }
+    @{ Name = 'SADP (Hikvision)';     Download = 'https://files.dg-solutions.am/HHScript/SADP.exe'; File = 'SADP.exe' }
+    @{ Name = 'HiTools Delivery (Hikvision)'; Download = 'https://files.dg-solutions.am/HHScript/HiToolsDeliverySetup_EN.exe'; File = 'HiToolsDeliverySetup_EN.exe' }
+    @{ Name = 'iVMS-4200 (Hikvision)'; Download = 'https://files.dg-solutions.am/HHScript/iVMS-4200V3.14.1.3_E.exe'; File = 'iVMS-4200V3.14.1.3_E.exe' }
     # --- CCTV — прочие вендоры (winget / страница загрузки) ---
     @{ Group = 'CCTV — прочие вендоры'; Name = 'ONVIF Device Manager (универсальный)'; Download = 'https://downloads.sourceforge.net/project/onvifdm/odm-v2.2.250r.msi'; File = 'odm-v2.2.250r.msi'; Url = 'https://sourceforge.net/projects/onvifdm/' }
     @{ Name = 'Reolink Client';       Winget = 'Reolink.Reolink';                 Url = 'https://reolink.com/software-and-manual/' }
@@ -636,21 +636,21 @@ function Show-PCInfo {
 # Отчёт сохраняется ИЗ интерфейса Glow (HTML / TXT / Markdown); CLI-экспорта у
 # него нет, поэтому автоматически html-файл не создаём — Glow это делает кнопкой.
 function Invoke-Glow {
-    $url  = 'https://disk.yandex.ru/d/yOWdlEZZlBDysw'   # тот же архив, что в списке программ
+    $url  = 'https://files.dg-solutions.am/HHScript/Glow_v26.11.zip'
     $dir  = Join-Path $env:LOCALAPPDATA 'HHToolbox\Glow'
     $arch = if ($env:PROCESSOR_ARCHITECTURE -match 'ARM64' -or $env:PROCESSOR_ARCHITEW6432 -match 'ARM64') { 'arm64' } else { 'x64' }
     $exe  = Get-ChildItem $dir -Recurse -Filter "Glow_$arch.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $exe) { $exe = Get-ChildItem $dir -Recurse -Filter 'Glow*.exe' -ErrorAction SilentlyContinue | Select-Object -First 1 }
     if (-not $exe) {
-        Write-Host "`n   Скачиваю Glow с Яндекс.Диска..." -ForegroundColor Green
+        Write-Host "`n   Скачиваю Glow..." -ForegroundColor Green
         try {
-            $enc  = [uri]::EscapeDataString($url)
-            $href = (Invoke-RestMethod "https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=$enc").href
             $zip  = Join-Path $env:TEMP 'glow.zip'
             $wc = New-Object System.Net.WebClient
-            try { $wc.DownloadFile($href, $zip) } finally { $wc.Dispose() }
+            try { $wc.DownloadFile($url, $zip) } finally { $wc.Dispose() }
             Expand-Archive -Path $zip -DestinationPath $dir -Force
             Remove-Item $zip -Force -ErrorAction SilentlyContinue
             $exe = Get-ChildItem $dir -Recurse -Filter "Glow_$arch.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $exe) { $exe = Get-ChildItem $dir -Recurse -Filter 'Glow*.exe' -ErrorAction SilentlyContinue | Select-Object -First 1 }
         } catch { Write-Host "   Ошибка загрузки Glow: $($_.Exception.Message)" -ForegroundColor Red; return }
     }
     if ($exe) {
@@ -925,6 +925,7 @@ function Show-ProgramMenu {
     # Метки: пункты без winget откроют сайт загрузки — помечаем «(сайт)»
     $labels = @($Programs | ForEach-Object {
         if ($HasWinget -and $_.Winget) { $_.Name }
+        elseif ($_.Download) { $_.Name }
         elseif ($_.Yadisk) { $_.Name }
         elseif ($_.Layout) { $_.Name + '  (раскладка)' }
         else { $_.Name + '  (сайт)' }
