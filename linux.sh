@@ -33,6 +33,22 @@ require_apt() {
   fi
 }
 
+# На Linux-консоли VM кириллица часто превращается в треугольники/ромбики —
+# активный шрифт VT без кириллических глифов. Грузим кириллический UTF-8 шрифт.
+# Только для настоящей консоли (TERM=linux); по SSH рисует клиентский терминал,
+# setfont там неприменим — не трогаем. Молча, без прав — не критично.
+fix_console_font() {
+  [ "${TERM:-}" = linux ] || return 0
+  command -v setfont >/dev/null 2>&1 || return 0
+  local f
+  for f in Uni2-Terminus16 Uni2-Fixed16 Uni2-VGA16 CyrSlav-Terminus16 \
+           CyrSlav-Fixed16 UniCyr_8x16 Cyr_a8x16 cyr-sun16; do
+    setfont "$f" 2>/dev/null && return 0
+  done
+  command -v setupcon >/dev/null 2>&1 && setupcon 2>/dev/null
+  return 0
+}
+
 # --- ввод/привилегии -------------------------------------------------------
 read_tty() { IFS= read -r "$@" </dev/tty; }
 
@@ -1819,6 +1835,7 @@ dsk_nfs() {
 # ===========================================================================
 
 main() {
+  fix_console_font
   require_tty
   require_apt
   init_sudo
