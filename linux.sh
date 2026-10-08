@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# HH Toolbox — Linux CLI (Debian/Ubuntu)
-# Запуск:  curl lin.hhtdom.ru | bash
-# UI: gum (красивый, скачивается при отсутствии) -> чистый bash.
-# Весь ввод из /dev/tty, т.к. при "curl | bash" stdin занят самим скриптом.
+# HH Toolbox - Linux CLI (Debian/Ubuntu)
+# Run:  curl lin.hhtdom.ru | bash
+# UI: gum (pretty, downloaded if missing) -> plain bash.
+# All input from /dev/tty, because with "curl | bash" stdin is the script itself.
 
 VERSION="1.0"
 LOG="${HOME:-/root}/.hhtoolbox.log"
 
-# журнал действий (аудит на сервере клиента): время + сообщение в ~/.hhtoolbox.log
+# action log (audit on the client's server): time + message in ~/.hhtoolbox.log
 log() { printf '%s  %s\n' "$(date '+%F %T')" "$*" >>"$LOG" 2>/dev/null || true; }
 
-# --- защита от sh и от неинтерактивного запуска ---------------------------
+# --- guard against sh and non-interactive runs ----------------------------
 if [ -z "${BASH_VERSION:-}" ]; then
-  echo "Запусти через bash:  curl lin.hhtdom.ru | bash" >&2
+  echo "Run it with bash:  curl lin.hhtdom.ru | bash" >&2
   exit 1
 fi
 
@@ -20,23 +20,23 @@ trap 'printf "\n"; exit 130' INT
 
 require_tty() {
   if ! { [ -e /dev/tty ] && ( : </dev/tty ) 2>/dev/null; }; then
-    echo "Нужен интерактивный терминал (/dev/tty недоступен)." >&2
-    echo "Скачай и запусти:  curl -fsSL lin.hhtdom.ru -o hh.sh && bash hh.sh" >&2
+    echo "An interactive terminal is required (/dev/tty is unavailable)." >&2
+    echo "Download and run:  curl -fsSL lin.hhtdom.ru -o hh.sh && bash hh.sh" >&2
     exit 1
   fi
 }
 
 require_apt() {
   if ! command -v apt-get >/dev/null 2>&1; then
-    echo "Скрипт рассчитан на Debian/Ubuntu (нужен apt-get)." >&2
+    echo "This script targets Debian/Ubuntu (apt-get is required)." >&2
     exit 1
   fi
 }
 
-# На Linux-консоли VM кириллица часто превращается в треугольники/ромбики —
-# активный шрифт VT без кириллических глифов. Грузим кириллический UTF-8 шрифт.
-# Только для настоящей консоли (TERM=linux); по SSH рисует клиентский терминал,
-# setfont там неприменим — не трогаем. Молча, без прав — не критично.
+# On a VM Linux console Cyrillic often turns into triangles/diamonds -
+# the active VT font has no Cyrillic glyphs. Load a Cyrillic UTF-8 font.
+# Only for a real console (TERM=linux); over SSH the client terminal draws,
+# setfont does not apply there - leave it. Silent, no privileges - not critical.
 fix_console_font() {
   [ "${TERM:-}" = linux ] || return 0
   command -v setfont >/dev/null 2>&1 || return 0
@@ -49,13 +49,13 @@ fix_console_font() {
   return 0
 }
 
-# --- ввод/привилегии -------------------------------------------------------
+# --- input/privileges ------------------------------------------------------
 read_tty() { IFS= read -r "$@" </dev/tty; }
 
 SUDO=""
 init_sudo() { [ "$(id -u)" -ne 0 ] && SUDO="sudo"; }
 
-# fetch OUT URL  (OUT="-" -> в stdout)
+# fetch OUT URL  (OUT="-" -> to stdout)
 fetch() {
   local out=$1 url=$2
   if command -v curl >/dev/null 2>&1; then
@@ -67,28 +67,28 @@ fetch() {
   fi
 }
 
-# поставить пакет, если ещё нет
+# install a package if not present yet
 ensure_pkg() {
   local p=$1
   dpkg -s "$p" >/dev/null 2>&1 && return 0
-  ui_msg "Ставлю пакет: $p"
+  ui_msg "Installing package: $p"
   log "apt install: $p"
   $SUDO apt-get update -qq && $SUDO apt-get install -y "$p"
 }
 
-# текущая подсеть в формате CIDR (напр. 192.168.1.50/24) — для сканов по умолчанию
+# current subnet in CIDR form (e.g. 192.168.1.50/24) - default for scans
 default_cidr() {
   local dev
   dev=$(ip route 2>/dev/null | awk '/default/{print $5; exit}')
   ip -o -f inet addr show "$dev" 2>/dev/null | awk '{print $4; exit}'
 }
 
-# пейджер для длинного вывода (читает stdin, клавиши less берёт с /dev/tty сам)
+# pager for long output (reads stdin, less takes keys from /dev/tty itself)
 page() {
   if command -v less >/dev/null 2>&1; then less -RFX >/dev/tty; else cat >/dev/tty; fi
 }
 
-# --- UI-слой: gum или plain ------------------------------------------------
+# --- UI layer: gum or plain ------------------------------------------------
 UI=plain
 GUM=""
 
@@ -115,34 +115,34 @@ try_install_gum() {
 }
 
 ensure_ui() {
-  # принудительный режим:  HH_UI=plain  или  HH_UI=gum
+  # forced mode:  HH_UI=plain  or  HH_UI=gum
   case "${HH_UI:-}" in
     plain) UI=plain; return ;;
     gum)   command -v gum >/dev/null 2>&1 && { GUM=gum; UI=gum; return; } ;;
   esac
   if command -v gum >/dev/null 2>&1; then GUM=gum; UI=gum; return; fi
-  printf 'Подгружаю красивый интерфейс (gum)...\n' >/dev/tty
+  printf 'Fetching the pretty interface (gum)...\n' >/dev/tty
   if try_install_gum; then UI=gum; return; fi
-  printf 'gum недоступен — простой текстовый режим.\n' >/dev/tty
+  printf 'gum unavailable - using plain text mode.\n' >/dev/tty
   UI=plain
 }
 
-# ui_msg TEXT...      — сообщение/заголовок
+# ui_msg TEXT...      - message/heading
 ui_msg() {
   if [ "$UI" = gum ]; then "$GUM" style --border rounded --padding "0 1" --border-foreground 212 "$@"
   else printf '\n'; printf '%s\n' "$@"; fi
 }
 
-# ui_yesno PROMPT     — 0 = да
+# ui_yesno PROMPT     - 0 = yes
 ui_yesno() {
   local prompt=$1 a
   if [ "$UI" = gum ]; then "$GUM" confirm "$prompt"; return $?; fi
   printf '%s [y/N]: ' "$prompt" >/dev/tty
   read_tty a || return 1
-  case "$a" in y|Y|yes|Yes|да|Да) return 0 ;; *) return 1 ;; esac
+  case "$a" in y|Y|yes|Yes) return 0 ;; *) return 1 ;; esac
 }
 
-# ui_input PROMPT [DEFAULT]  — строка в stdout
+# ui_input PROMPT [DEFAULT]  - line to stdout
 ui_input() {
   local prompt=$1 def=${2:-} a
   if [ "$UI" = gum ]; then
@@ -157,7 +157,7 @@ ui_input() {
   printf '%s' "$a"
 }
 
-# ui_menu TITLE OPT...  — один выбор в stdout
+# ui_menu TITLE OPT...  - single choice to stdout
 ui_menu() {
   local title=$1; shift
   if [ "$UI" = gum ]; then "$GUM" choose --header "$title" "$@"; return; fi
@@ -165,7 +165,7 @@ ui_menu() {
   {
     printf '\n== %s ==\n' "$title"
     for i in "${!opts[@]}"; do printf '  %2d) %s\n' "$((i+1))" "${opts[$i]}"; done
-    printf '  Выбор [1-%d]: ' "${#opts[@]}"
+    printf '  Choice [1-%d]: ' "${#opts[@]}"
   } >/dev/tty
   read_tty choice || return 1
   case "$choice" in ''|*[!0-9]*) return 1 ;; esac
@@ -176,7 +176,7 @@ ui_menu() {
   fi
 }
 
-# ui_checklist TITLE "tag|label"...  — выбранные tag'и в stdout (по строке)
+# ui_checklist TITLE "tag|label"...  - selected tags to stdout (one per line)
 ui_checklist() {
   local title=$1; shift
   local pairs=("$@") i
@@ -192,7 +192,7 @@ ui_checklist() {
     done <<< "$sel"
     return
   fi
-  # plain: переключение номерами
+  # plain: toggle by numbers
   local n=${#pairs[@]} state=() line tok lo hi
   for ((i=0;i<n;i++)); do state[i]=0; done
   while :; do
@@ -202,8 +202,8 @@ ui_checklist() {
         local mark=' '; [ "${state[i]}" = 1 ] && mark='x'
         printf '  [%s] %2d) %s\n' "$mark" "$((i+1))" "${pairs[i]#*|}"
       done
-      printf '  Номера через пробел — отметить/снять (диапазон 2-6), a — все, n — снять все\n'
-      printf '  Enter — применить, q — отмена\n  > '
+      printf '  Numbers separated by spaces - toggle (range 2-6), a - all, n - clear all\n'
+      printf '  Enter - apply, q - cancel\n  > '
     } >/dev/tty
     read_tty line || return 1
     case "$line" in
@@ -228,99 +228,99 @@ ui_checklist() {
 }
 
 pause() {
-  printf '\nНажми Enter для продолжения...' >/dev/tty
+  printf '\nPress Enter to continue...' >/dev/tty
   read_tty _ 2>/dev/null || true
 }
 
 banner() {
   if [ "$UI" = gum ]; then
     "$GUM" style --border double --margin "1 0" --padding "0 3" --border-foreground 212 --align center \
-      "HH Toolbox — Linux" "Debian/Ubuntu · v$VERSION"
+      "HH Toolbox - Linux" "Debian/Ubuntu - v$VERSION"
   else
     printf '\n========================================\n'
-    printf '   HH Toolbox — Linux   ·   v%s\n' "$VERSION"
+    printf '   HH Toolbox - Linux   -   v%s\n' "$VERSION"
     printf '========================================\n'
   fi
 }
 
 # ===========================================================================
-# ДАННЫЕ
+# DATA
 # ===========================================================================
 
-# пакеты apt:  "пакет|описание"
+# apt packages:  "package|description"
 APT_ITEMS=(
-  "htop|htop — интерактивный монитор процессов"
-  "btop|btop — красивый монитор ресурсов"
-  "tmux|tmux — сохранение сессий терминала"
-  "mc|Midnight Commander — файловый менеджер"
-  "ncdu|ncdu — анализ занятого места на диске"
-  "tree|tree — дерево каталогов"
-  "git|git — контроль версий"
-  "curl|curl — HTTP-клиент"
-  "wget|wget — загрузка файлов"
-  "net-tools|net-tools — ifconfig/netstat/route"
-  "dnsutils|dnsutils — dig/nslookup"
-  "nmap|nmap — сканер портов и сети"
-  "iftop|iftop — трафик по соединениям"
-  "iotop|iotop — нагрузка на диск по процессам"
-  "unzip|unzip — распаковка zip"
-  "rsync|rsync — синхронизация/копирование"
-  "ufw|ufw — простой фаервол"
-  "fail2ban|fail2ban — защита от брутфорса SSH"
-  "docker.io|Docker — контейнеры"
-  "nginx|nginx — веб-сервер / reverse proxy"
-  "fzf|fzf — нечёткий поиск"
-  "jq|jq — обработка JSON"
-  "ffmpeg|ffmpeg — конвертация + ffprobe (проверка RTSP-потоков камер)"
-  "v4l-utils|v4l-utils — работа с USB-камерами (v4l2)"
-  "tcpdump|tcpdump — захват сетевого трафика"
-  "traceroute|traceroute — трассировка маршрута"
-  "whois|whois — сведения о домене/IP"
-  "arp-scan|arp-scan — поиск устройств в LAN по MAC (камеры, NVR)"
-  "vnstat|vnstat — учёт трафика по интерфейсам"
-  "ethtool|ethtool — параметры сетевой карты (скорость/дуплекс)"
-  "socat|socat — универсальный ретранслятор сокетов"
-  "bat|bat — cat с подсветкой синтаксиса"
-  "ripgrep|ripgrep (rg) — быстрый поиск по тексту/логам"
-  "screen|screen — сохранение сессий терминала"
-  "tldr|tldr — краткие примеры по командам"
-  "lsof|lsof — кто держит файлы/порты"
+  "htop|htop - interactive process monitor"
+  "btop|btop - pretty resource monitor"
+  "tmux|tmux - persistent terminal sessions"
+  "mc|Midnight Commander - file manager"
+  "ncdu|ncdu - disk usage analyzer"
+  "tree|tree - directory tree"
+  "git|git - version control"
+  "curl|curl - HTTP client"
+  "wget|wget - file downloader"
+  "net-tools|net-tools - ifconfig/netstat/route"
+  "dnsutils|dnsutils - dig/nslookup"
+  "nmap|nmap - port and network scanner"
+  "iftop|iftop - traffic by connection"
+  "iotop|iotop - disk load by process"
+  "unzip|unzip - extract zip"
+  "rsync|rsync - sync/copy"
+  "ufw|ufw - simple firewall"
+  "fail2ban|fail2ban - SSH brute-force protection"
+  "docker.io|Docker - containers"
+  "nginx|nginx - web server / reverse proxy"
+  "fzf|fzf - fuzzy finder"
+  "jq|jq - JSON processor"
+  "ffmpeg|ffmpeg - conversion + ffprobe (test camera RTSP streams)"
+  "v4l-utils|v4l-utils - USB cameras (v4l2)"
+  "tcpdump|tcpdump - capture network traffic"
+  "traceroute|traceroute - trace the route"
+  "whois|whois - domain/IP info"
+  "arp-scan|arp-scan - find LAN devices by MAC (cameras, NVR)"
+  "vnstat|vnstat - per-interface traffic accounting"
+  "ethtool|ethtool - NIC settings (speed/duplex)"
+  "socat|socat - universal socket relay"
+  "bat|bat - cat with syntax highlighting"
+  "ripgrep|ripgrep (rg) - fast text/log search"
+  "screen|screen - persistent terminal sessions"
+  "tldr|tldr - short command examples"
+  "lsof|lsof - who holds files/ports"
 )
 
-# твики:  "tag|описание"  (функция tw_<tag>)
+# tweaks:  "tag|description"  (function tw_<tag>)
 TWEAK_ITEMS=(
-  "update|Обновить систему (apt update && upgrade)"
-  "ufw|Фаервол UFW: разрешить SSH и включить"
-  "fail2ban|Установить и включить fail2ban"
-  "unattended|Автообновления безопасности"
-  "timezone|Часовой пояс (по умолч. Asia/Yerevan)"
-  "swap|Создать swap-файл"
-  "hostname|Сменить имя хоста"
-  "bbr|Ускорение сети TCP BBR"
-  "ssh_harden|Усилить SSH (только по ключу) — риск локаута"
+  "update|Update the system (apt update && upgrade)"
+  "ufw|UFW firewall: allow SSH and enable"
+  "fail2ban|Install and enable fail2ban"
+  "unattended|Unattended security updates"
+  "timezone|Timezone (default Asia/Yerevan)"
+  "swap|Create a swap file"
+  "hostname|Change the hostname"
+  "bbr|Network speedup TCP BBR"
+  "ssh_harden|Harden SSH (key-only) - lockout risk"
 )
 
-# справочник команд:  "описание@@команда"  (в командах есть | — потому @@)
+# command reference:  "description@@command"  (commands contain | - hence @@)
 CMDS=(
-  "Открытые/слушающие порты@@ss -tulnp"
-  "Топ процессов по CPU@@ps aux --sort=-%cpu | head -n 20"
-  "Топ процессов по памяти@@ps aux --sort=-%mem | head -n 20"
-  "Использование диска по ФС@@df -hT"
-  "Крупнейшие папки здесь@@du -h --max-depth=1 . 2>/dev/null | sort -hr | head -n 20"
-  "Блочные устройства@@lsblk -o NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE"
-  "Активные сервисы systemd@@systemctl list-units --type=service --state=running --no-pager"
-  "Ошибки в журнале (последние 50)@@journalctl -p err -n 50 --no-pager"
-  "Кто в системе и последние входы@@{ echo '# сейчас:'; who; echo; echo '# входы:'; last -n 10; }"
-  "Сетевые интерфейсы (кратко)@@ip -br a"
-  "Таблица маршрутизации@@ip route"
-  "Память@@free -h"
-  "Аптайм и нагрузка@@uptime"
-  "Версия ОС и ядра@@{ . /etc/os-release; echo \"\$PRETTY_NAME\"; uname -a; }"
-  "Журнал действий HH Toolbox@@tail -n 100 \"\$LOG\" 2>/dev/null || echo 'журнал пуст'"
+  "Open/listening ports@@ss -tulnp"
+  "Top processes by CPU@@ps aux --sort=-%cpu | head -n 20"
+  "Top processes by memory@@ps aux --sort=-%mem | head -n 20"
+  "Disk usage by filesystem@@df -hT"
+  "Largest folders here@@du -h --max-depth=1 . 2>/dev/null | sort -hr | head -n 20"
+  "Block devices@@lsblk -o NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE"
+  "Active systemd services@@systemctl list-units --type=service --state=running --no-pager"
+  "Errors in the journal (last 50)@@journalctl -p err -n 50 --no-pager"
+  "Who is logged in and recent logins@@{ echo '# now:'; who; echo; echo '# logins:'; last -n 10; }"
+  "Network interfaces (brief)@@ip -br a"
+  "Routing table@@ip route"
+  "Memory@@free -h"
+  "Uptime and load@@uptime"
+  "OS and kernel version@@{ . /etc/os-release; echo \"\$PRETTY_NAME\"; uname -a; }"
+  "HH Toolbox action log@@tail -n 100 \"\$LOG\" 2>/dev/null || echo 'log is empty'"
 )
 
 # ===========================================================================
-# РАЗДЕЛЫ
+# SECTIONS
 # ===========================================================================
 
 sec_sysinfo() {
@@ -332,18 +332,18 @@ sec_sysinfo() {
   [ -z "$cpu" ] && cpu=$(uname -p)
   cores=$(nproc 2>/dev/null)
   mem=$(free -h | awk '/^Mem:/{print $3" / "$2}')
-  disk=$(df -h / | awk 'NR==2{print $3" / "$2" ("$5" занято)"}')
+  disk=$(df -h / | awk 'NR==2{print $3" / "$2" ("$5" used)"}')
   load=$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null)
 
   {
-    printf '\n=== Информация о системе ===\n\n'
-    printf 'ОС:          %s\n' "$os"
-    printf 'Ядро:        %s\n' "$kern"
-    printf 'Хост:        %s\n' "$(hostname)"
-    printf 'Аптайм:      %s   (load %s)\n' "$up" "$load"
-    printf 'CPU:         %s  (%s ядер)\n' "$cpu" "$cores"
-    printf 'Память:      %s\n' "$mem"
-    printf 'Диск /:      %s\n' "$disk"
+    printf '\n=== System info ===\n\n'
+    printf 'OS:          %s\n' "$os"
+    printf 'Kernel:      %s\n' "$kern"
+    printf 'Host:        %s\n' "$(hostname)"
+    printf 'Uptime:      %s   (load %s)\n' "$up" "$load"
+    printf 'CPU:         %s  (%s cores)\n' "$cpu" "$cores"
+    printf 'Memory:      %s\n' "$mem"
+    printf 'Disk /:      %s\n' "$disk"
   } >/dev/tty
   pause
 }
@@ -354,18 +354,18 @@ sec_netinfo() {
   ip=$(ip -o -f inet addr show "$dev" 2>/dev/null | awk '{print $4; exit}')
   gw=$(ip route 2>/dev/null | awk '/default/{print $3; exit}')
   dns=$(grep -h '^nameserver' /etc/resolv.conf 2>/dev/null | awk '{print $2}' | paste -sd', ' -)
-  pub=$(fetch - https://api.ipify.org 2>/dev/null); [ -z "$pub" ] && pub="н/д"
+  pub=$(fetch - https://api.ipify.org 2>/dev/null); [ -z "$pub" ] && pub="n/a"
 
   {
-    printf '\n=== Информация о сети ===\n\n'
-    printf 'Интерфейс:   %s\n' "${dev:-н/д}"
-    printf 'IP-адрес:    %s\n' "${ip:-н/д}"
-    printf 'Шлюз:        %s\n' "${gw:-н/д}"
-    printf 'DNS:         %s\n' "${dns:-н/д}"
-    printf 'Внешний IP:  %s\n' "$pub"
-    printf '\nИнтерфейсы:\n'
+    printf '\n=== Network info ===\n\n'
+    printf 'Interface:   %s\n' "${dev:-n/a}"
+    printf 'IP address:  %s\n' "${ip:-n/a}"
+    printf 'Gateway:     %s\n' "${gw:-n/a}"
+    printf 'DNS:         %s\n' "${dns:-n/a}"
+    printf 'External IP: %s\n' "$pub"
+    printf '\nInterfaces:\n'
     ip -br a 2>/dev/null | grep -v '^lo ' | sed 's/^/  /'
-    printf '\nСлушающие порты:\n'
+    printf '\nListening ports:\n'
     ss -tulnH 2>/dev/null | awk '{print "  "$1"  "$5}' | sort -u | head -n 25
   } >/dev/tty
   pause
@@ -373,27 +373,27 @@ sec_netinfo() {
 
 sec_install() {
   local sel pkgs=() t
-  sel=$(ui_checklist "Установка программ (apt) — отметь галочками" "${APT_ITEMS[@]}") || return
+  sel=$(ui_checklist "Install packages (apt) - tick the boxes" "${APT_ITEMS[@]}") || return
   while IFS= read -r t; do [ -n "$t" ] && pkgs+=("$t"); done <<< "$sel"
-  [ "${#pkgs[@]}" -gt 0 ] || { ui_msg "Ничего не выбрано."; pause; return; }
-  ui_msg "Будут установлены:" "${pkgs[*]}"
-  ui_yesno "Установить сейчас?" || { pause; return; }
-  log "установка пакетов: ${pkgs[*]}"
+  [ "${#pkgs[@]}" -gt 0 ] || { ui_msg "Nothing selected."; pause; return; }
+  ui_msg "Will install:" "${pkgs[*]}"
+  ui_yesno "Install now?" || { pause; return; }
+  log "installing packages: ${pkgs[*]}"
   $SUDO apt-get update
   $SUDO apt-get install -y "${pkgs[@]}"
-  ui_msg "Готово."
+  ui_msg "Done."
   pause
 }
 
 sec_tweaks() {
   local sel t
-  sel=$(ui_checklist "Твики и настройка сервера — отметь галочками" "${TWEAK_ITEMS[@]}") || return
-  [ -n "$sel" ] || { ui_msg "Ничего не выбрано."; pause; return; }
+  sel=$(ui_checklist "Server tweaks & hardening - tick the boxes" "${TWEAK_ITEMS[@]}") || return
+  [ -n "$sel" ] || { ui_msg "Nothing selected."; pause; return; }
   while IFS= read -r t; do
     [ -n "$t" ] || continue
-    if declare -F "tw_$t" >/dev/null; then log "твик: $t"; "tw_$t"; fi
+    if declare -F "tw_$t" >/dev/null; then log "tweak: $t"; "tw_$t"; fi
   done <<< "$sel"
-  ui_msg "Твики применены."
+  ui_msg "Tweaks applied."
   pause
 }
 
@@ -402,9 +402,9 @@ sec_commands() {
   while :; do
     labels=()
     for item in "${CMDS[@]}"; do labels+=("${item%%@@*}"); done
-    labels+=("← Назад")
-    pick=$(ui_menu "Справочник команд — выбери, покажу и выполню" "${labels[@]}") || return
-    [ "$pick" = "← Назад" ] || [ -z "$pick" ] && return
+    labels+=("<- Back")
+    pick=$(ui_menu "Command reference - pick one, I'll show and run it" "${labels[@]}") || return
+    [ "$pick" = "<- Back" ] || [ -z "$pick" ] && return
     for item in "${CMDS[@]}"; do
       desc=${item%%@@*}; cmd=${item#*@@}
       if [ "$desc" = "$pick" ]; then
@@ -418,17 +418,17 @@ sec_commands() {
 }
 
 # ===========================================================================
-# ТВИКИ
+# TWEAKS
 # ===========================================================================
 
 tw_update() {
-  ui_msg "Обновление системы..."
+  ui_msg "Updating the system..."
   $SUDO apt-get update && $SUDO apt-get -y upgrade
 }
 
 tw_ufw() {
   ensure_pkg ufw || return
-  ui_msg "UFW: разрешаю SSH и включаю фаервол."
+  ui_msg "UFW: allowing SSH and enabling the firewall."
   $SUDO ufw allow OpenSSH >/dev/null 2>&1 || $SUDO ufw allow 22/tcp
   $SUDO ufw --force enable
   $SUDO ufw status verbose
@@ -437,7 +437,7 @@ tw_ufw() {
 tw_fail2ban() {
   ensure_pkg fail2ban || return
   $SUDO systemctl enable --now fail2ban
-  ui_msg "fail2ban включён (защита SSH по умолчанию)."
+  ui_msg "fail2ban enabled (SSH protection by default)."
 }
 
 tw_unattended() {
@@ -445,22 +445,22 @@ tw_unattended() {
   printf 'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-Upgrade "1";\n' \
     | $SUDO tee /etc/apt/apt.conf.d/20auto-upgrades >/dev/null
   $SUDO systemctl enable --now unattended-upgrades 2>/dev/null
-  ui_msg "Автообновления безопасности включены."
+  ui_msg "Unattended security updates enabled."
 }
 
 tw_timezone() {
-  local tz; tz=$(ui_input "Часовой пояс" "Asia/Yerevan")
+  local tz; tz=$(ui_input "Timezone" "Asia/Yerevan")
   [ -n "$tz" ] || return
-  $SUDO timedatectl set-timezone "$tz" && ui_msg "Часовой пояс: $tz"
+  $SUDO timedatectl set-timezone "$tz" && ui_msg "Timezone: $tz"
 }
 
 tw_swap() {
   if swapon --show 2>/dev/null | grep -q .; then
-    ui_yesno "Swap уже есть. Всё равно создать /swapfile?" || return
+    ui_yesno "Swap already exists. Create /swapfile anyway?" || return
   fi
   local sz f=/swapfile
-  sz=$(ui_input "Размер swap-файла (напр. 2G)" "2G")
-  if [ -e "$f" ]; then ui_msg "$f уже существует — пропускаю."; return; fi
+  sz=$(ui_input "Swap file size (e.g. 2G)" "2G")
+  if [ -e "$f" ]; then ui_msg "$f already exists - skipping."; return; fi
   if ! $SUDO fallocate -l "$sz" "$f" 2>/dev/null; then
     local mb=${sz%[Gg]}; mb=$(( mb * 1024 ))
     $SUDO dd if=/dev/zero of="$f" bs=1M count="$mb" status=none
@@ -469,14 +469,14 @@ tw_swap() {
   $SUDO mkswap "$f" >/dev/null
   $SUDO swapon "$f"
   grep -q "^$f " /etc/fstab 2>/dev/null || printf '%s none swap sw 0 0\n' "$f" | $SUDO tee -a /etc/fstab >/dev/null
-  ui_msg "Swap создан: $sz"
+  ui_msg "Swap created: $sz"
   free -h >/dev/tty
 }
 
 tw_hostname() {
-  local h; h=$(ui_input "Новое имя хоста" "$(hostname)")
+  local h; h=$(ui_input "New hostname" "$(hostname)")
   [ -n "$h" ] || return
-  $SUDO hostnamectl set-hostname "$h" && ui_msg "Имя хоста: $h"
+  $SUDO hostnamectl set-hostname "$h" && ui_msg "Hostname: $h"
 }
 
 tw_bbr() {
@@ -487,39 +487,39 @@ tw_bbr() {
 }
 
 tw_ssh_harden() {
-  ui_msg "ВНИМАНИЕ: отключаю вход по паролю и root-логин." \
-         "Убедись, что SSH-ключ уже настроен — иначе потеряешь доступ!"
-  ui_yesno "SSH-ключ настроен, продолжить?" || return
+  ui_msg "WARNING: disabling password login and root login." \
+         "Make sure an SSH key is already set up - otherwise you will lose access!"
+  ui_yesno "SSH key is set up, continue?" || return
   local d=/etc/ssh/sshd_config.d f
   if [ -d "$d" ]; then f="$d/99-hh-harden.conf"; else f=/etc/ssh/sshd_config; fi
   printf 'PermitRootLogin no\nPasswordAuthentication no\nKbdInteractiveAuthentication no\n' \
     | $SUDO tee "$f" >/dev/null
   $SUDO systemctl restart ssh 2>/dev/null || $SUDO systemctl restart sshd 2>/dev/null
-  log "SSH хардненинг применён (только по ключу)"
-  ui_msg "SSH усилён. Проверь новый вход в ОТДЕЛЬНОЙ сессии, прежде чем закрыть текущую!"
+  log "SSH hardening applied (key-only)"
+  ui_msg "SSH hardened. Verify a new login in a SEPARATE session before closing this one!"
 }
 
 # ===========================================================================
-# ДИАГНОСТИКА СЕТИ
+# NETWORK DIAGNOSTICS
 # ===========================================================================
 
 sec_netdiag() {
   local pick
   while :; do
-    pick=$(ui_menu "Диагностика сети" \
-      "Network Doctor — почему не работает сеть" \
-      "Пинг-скан подсети (живые хосты)" \
-      "Скан камер/NVR (порты CCTV)" \
-      "Проверка RTSP-порта камеры" \
-      "mtr — трасса с потерями" \
-      "iperf3 — замер скорости между узлами" \
-      "speedtest — скорость до интернета" \
-      "← Назад") || return
+    pick=$(ui_menu "Network diagnostics" \
+      "Network Doctor - why the network is down" \
+      "Ping sweep of subnet (live hosts)" \
+      "Scan cameras/NVR (CCTV ports)" \
+      "Check camera RTSP port" \
+      "mtr - route with packet loss" \
+      "iperf3 - bandwidth between hosts" \
+      "speedtest - internet speed" \
+      "<- Back") || return
     case "$pick" in
       "Network Doctor"*) nd_doctor ;;
-      "Пинг-скан"*)  nd_pingscan ;;
-      "Скан камер"*) nd_camscan ;;
-      "Проверка RTSP"*) nd_rtsp ;;
+      "Ping sweep"*)  nd_pingscan ;;
+      "Scan cameras"*) nd_camscan ;;
+      "Check camera RTSP"*) nd_rtsp ;;
       "mtr"*)        nd_mtr ;;
       "iperf3"*)     nd_iperf ;;
       "speedtest"*)  nd_speedtest ;;
@@ -528,7 +528,7 @@ sec_netdiag() {
   done
 }
 
-# строка отчёта: ok/bad/warn + подпись + деталь
+# report line: ok/bad/warn + label + detail
 dl() {
   local m
   case "$1" in ok) m='[OK]' ;; bad) m='[!!]' ;; warn) m='[~]' ;; esac
@@ -537,127 +537,127 @@ dl() {
   return 0
 }
 
-# Network Doctor: батарея read-only проверок «почему не работает сеть» + вердикт.
+# Network Doctor: a battery of read-only "why is the network down" checks + verdict.
 nd_doctor() {
   command -v ping >/dev/null 2>&1 || ensure_pkg iputils-ping >/dev/null 2>&1 || true
   local verdict='' dev gw ip dns pub ups o loss ipdead=0 gwok=0 netok=0 tgt
-  printf '\n=== Network Doctor — диагностика сети ===\n\n' >/dev/tty
+  printf '\n=== Network Doctor - network diagnostics ===\n\n' >/dev/tty
 
-  # 1) линк
+  # 1) link
   ups=$(ip -br link 2>/dev/null | awk '$1!="lo" && $2=="UP"{print $1}' | paste -sd', ' -)
   if [ -n "$ups" ]; then
-    dl ok "Сетевой интерфейс активен" "$ups"
+    dl ok "Network interface is up" "$ups"
   else
-    dl bad "Нет активных интерфейсов" "Кабель не подключён или адаптер выключен."
-    printf '\n  → Нет физического подключения.\n' >/dev/tty; pause; return
+    dl bad "No active interfaces" "Cable unplugged or the adapter is off."
+    printf '\n  -> No physical connection.\n' >/dev/tty; pause; return
   fi
 
-  # 2) IP / шлюз / DNS
+  # 2) IP / gateway / DNS
   dev=$(ip route 2>/dev/null | awk '/default/{print $5; exit}')
   gw=$(ip route 2>/dev/null | awk '/default/{print $3; exit}')
   ip=$(ip -o -f inet addr show "$dev" 2>/dev/null | awk '{print $4; exit}')
   dns=$(grep -h '^nameserver' /etc/resolv.conf 2>/dev/null | awk '{print $2}' | paste -sd', ' -)
   if [ -z "$ip" ]; then
-    dl bad "Нет IPv4-адреса" "Адаптер активен, но адрес не назначен."
-    verdict+=$'\n  → Нет IP — DHCP не выдал. Проверь DHCP на роутере или задай статику.'; ipdead=1
+    dl bad "No IPv4 address" "The adapter is up but no address is assigned."
+    verdict+=$'\n  -> No IP - DHCP did not hand one out. Check DHCP on the router or set a static IP.'; ipdead=1
   elif printf '%s' "$ip" | grep -q '^169\.254\.'; then
-    dl bad "APIPA-адрес $ip" "DHCP не ответил (169.254.x.x)."
-    verdict+=$'\n  → ПК не получил IP от DHCP. Проверь кабель до роутера / DHCP-сервер.'; ipdead=1
+    dl bad "APIPA address $ip" "DHCP did not answer (169.254.x.x)."
+    verdict+=$'\n  -> The PC got no IP from DHCP. Check the cable to the router / the DHCP server.'; ipdead=1
   else
-    dl ok "IPv4-адрес: $ip" "Шлюз: ${gw:-нет}; DNS: ${dns:-нет}"
+    dl ok "IPv4 address: $ip" "Gateway: ${gw:-none}; DNS: ${dns:-none}"
   fi
 
-  # 3) шлюз
+  # 3) gateway
   if [ -n "$gw" ] && [ "$ipdead" = 0 ]; then
     if o=$(ping -c3 -W1 "$gw" 2>/dev/null); then
       gwok=1; loss=$(printf '%s' "$o" | grep -oE '[0-9]+% packet loss' | head -1)
-      dl ok "Шлюз $gw отвечает" "$loss"
+      dl ok "Gateway $gw responds" "$loss"
     else
-      dl bad "Шлюз $gw не отвечает" "Роутер/локальная сеть недоступны."
-      verdict+=$'\n  → Шлюз недоступен — проблема в локальной сети или роутере.'
+      dl bad "Gateway $gw does not respond" "Router/local network unreachable."
+      verdict+=$'\n  -> Gateway unreachable - the problem is in the LAN or the router.'
     fi
   fi
 
-  # 4) интернет (ICMP)
+  # 4) internet (ICMP)
   if [ "$ipdead" = 0 ]; then
     for tgt in 1.1.1.1 8.8.8.8; do
       if o=$(ping -c3 -W1 "$tgt" 2>/dev/null); then
         netok=1; loss=$(printf '%s' "$o" | grep -oE '[0-9]+% packet loss' | head -1)
-        dl ok "Интернет доступен ($tgt)" "$loss"; break
+        dl ok "Internet reachable ($tgt)" "$loss"; break
       fi
     done
     if [ "$netok" = 0 ]; then
-      dl bad "Интернет недоступен (ICMP)" "Пинг до 1.1.1.1 и 8.8.8.8 не прошёл."
-      [ "$gwok" = 1 ] && verdict+=$'\n  → Локальная сеть ок, но нет выхода в интернет — провайдер/роутер (WAN).'
+      dl bad "Internet unreachable (ICMP)" "Ping to 1.1.1.1 and 8.8.8.8 failed."
+      [ "$gwok" = 1 ] && verdict+=$'\n  -> LAN is fine but no internet access - ISP/router (WAN).'
     fi
   fi
 
-  # 5) DNS-резолвинг
+  # 5) DNS resolution
   if [ "$ipdead" = 0 ]; then
     if getent hosts cloudflare.com >/dev/null 2>&1; then
-      dl ok "DNS резолвит имена" "cloudflare.com → адрес получен."
+      dl ok "DNS resolves names" "cloudflare.com -> address received."
     else
-      dl bad "DNS не резолвит имена" "Имена сайтов не преобразуются в адреса."
-      [ "$netok" = 1 ] && verdict+=$'\n  → Интернет есть, но DNS не работает — смени DNS на 1.1.1.1 / 8.8.8.8.'
+      dl bad "DNS does not resolve names" "Site names are not translated to addresses."
+      [ "$netok" = 1 ] && verdict+=$'\n  -> Internet works but DNS does not - switch DNS to 1.1.1.1 / 8.8.8.8.'
     fi
   fi
 
-  # 6) внешний IP
+  # 6) external IP
   if [ "$netok" = 1 ]; then
     pub=$(fetch - https://api.ipify.org 2>/dev/null)
-    [ -n "$pub" ] && dl ok "Внешний IP: $pub" "Полный доступ к интернету подтверждён."
+    [ -n "$pub" ] && dl ok "External IP: $pub" "Full internet access confirmed."
   fi
 
   printf '\n' >/dev/tty
   if [ -n "$verdict" ]; then
-    printf '  Итог:%s\n' "$verdict" >/dev/tty
+    printf '  Verdict:%s\n' "$verdict" >/dev/tty
   else
-    printf '  → Сеть работает нормально: интерфейс, IP, шлюз, интернет и DNS в порядке.\n' >/dev/tty
+    printf '  -> Network is working fine: interface, IP, gateway, internet and DNS are all OK.\n' >/dev/tty
   fi
   pause
 }
 
 nd_pingscan() {
   ensure_pkg nmap || { pause; return; }
-  local d; d=$(ui_input "Подсеть/CIDR для скана" "$(default_cidr)")
+  local d; d=$(ui_input "Subnet/CIDR to scan" "$(default_cidr)")
   [ -n "$d" ] || return
-  ui_msg "Пинг-скан $d ..."
+  ui_msg "Ping sweep of $d ..."
   $SUDO nmap -sn "$d" 2>&1 | page
   pause
 }
 
 nd_camscan() {
   ensure_pkg nmap || { pause; return; }
-  local t; t=$(ui_input "Хост или подсеть (камера/NVR)" "$(default_cidr)")
+  local t; t=$(ui_input "Host or subnet (camera/NVR)" "$(default_cidr)")
   [ -n "$t" ] || return
-  ui_msg "Ищу камеры/NVR в $t" "порты 80,443,554,8000,37777,34567,8899,88 ..."
+  ui_msg "Looking for cameras/NVR in $t" "ports 80,443,554,8000,37777,34567,8899,88 ..."
   $SUDO nmap -p 80,443,554,8000,37777,34567,8899,88 --open "$t" 2>&1 | page
   pause
 }
 
 nd_rtsp() {
   local h port
-  h=$(ui_input "IP камеры" ""); [ -n "$h" ] || return
-  port=$(ui_input "RTSP-порт" "554")
+  h=$(ui_input "Camera IP" ""); [ -n "$h" ] || return
+  port=$(ui_input "RTSP port" "554")
   if timeout 3 bash -c "exec 3<>/dev/tcp/$h/$port" 2>/dev/null; then
-    ui_msg "Порт $h:$port ОТКРЫТ — RTSP слушает."
+    ui_msg "Port $h:$port is OPEN - RTSP is listening."
     if command -v ffprobe >/dev/null 2>&1; then
-      local url; url=$(ui_input "RTSP URL для ffprobe" "rtsp://$h:$port/")
+      local url; url=$(ui_input "RTSP URL for ffprobe" "rtsp://$h:$port/")
       [ -n "$url" ] && ffprobe -v error -rtsp_transport tcp -show_streams \
         -of default=noprint_wrappers=1 "$url" 2>&1 | page
     else
-      ui_msg "Установи пакет ffmpeg — тогда проверю сам поток (ffprobe): разрешение/кодек."
+      ui_msg "Install the ffmpeg package - then I can probe the stream (ffprobe): resolution/codec."
     fi
   else
-    ui_msg "Порт $h:$port закрыт или недоступен."
+    ui_msg "Port $h:$port is closed or unreachable."
   fi
   pause
 }
 
 nd_mtr() {
   ensure_pkg mtr-tiny || ensure_pkg mtr || { pause; return; }
-  local h; h=$(ui_input "Хост назначения" "1.1.1.1"); [ -n "$h" ] || return
-  ui_msg "mtr до $h (10 циклов)..."
+  local h; h=$(ui_input "Destination host" "1.1.1.1"); [ -n "$h" ] || return
+  ui_msg "mtr to $h (10 cycles)..."
   $SUDO mtr -rwc 10 "$h" 2>&1 | page
   pause
 }
@@ -666,15 +666,15 @@ nd_iperf() {
   ensure_pkg iperf3 || { pause; return; }
   local mode h
   mode=$(ui_menu "iperf3" \
-    "Сервер (принять один замер)" \
-    "Клиент (подключиться к серверу)" \
-    "← Назад") || return
+    "Server (accept one measurement)" \
+    "Client (connect to a server)" \
+    "<- Back") || return
   case "$mode" in
-    "Сервер"*)
-      ui_msg "iperf3 -s на порту 5201 — жду один замер от клиента..."
+    "Server"*)
+      ui_msg "iperf3 -s on port 5201 - waiting for one measurement from a client..."
       iperf3 -s -1 >/dev/tty 2>&1 ;;
-    "Клиент"*)
-      h=$(ui_input "IP сервера iperf3" ""); [ -n "$h" ] || return
+    "Client"*)
+      h=$(ui_input "iperf3 server IP" ""); [ -n "$h" ] || return
       iperf3 -c "$h" 2>&1 | page ;;
     *) return ;;
   esac
@@ -683,27 +683,27 @@ nd_iperf() {
 
 nd_speedtest() {
   ensure_pkg speedtest-cli || { pause; return; }
-  ui_msg "Замер скорости до интернета..."
+  ui_msg "Measuring internet speed..."
   speedtest-cli 2>&1 | page
   pause
 }
 
 # ===========================================================================
-# DOCKER И СЕРВИСЫ
+# DOCKER AND SERVICES
 # ===========================================================================
 
 sec_docker() {
   local pick
   while :; do
-    pick=$(ui_menu "Docker и сервисы" \
-      "Установить Docker + compose" \
-      "Развернуть готовые стеки (галочки)" \
-      "Статус контейнеров" \
-      "← Назад") || return
+    pick=$(ui_menu "Docker & services" \
+      "Install Docker + compose" \
+      "Deploy ready-made stacks (checkboxes)" \
+      "Container status" \
+      "<- Back") || return
     case "$pick" in
-      "Установить Docker"*) dk_install ;;
-      "Развернуть"*)        dk_stacks ;;
-      "Статус"*)            dk_status ;;
+      "Install Docker"*) dk_install ;;
+      "Deploy"*)        dk_stacks ;;
+      "Container status"*) dk_status ;;
       *) return ;;
     esac
   done
@@ -711,28 +711,28 @@ sec_docker() {
 
 dk_install() {
   if command -v docker >/dev/null 2>&1; then
-    ui_msg "Docker уже установлен: $(docker --version)"; pause; return
+    ui_msg "Docker is already installed: $(docker --version)"; pause; return
   fi
-  ui_yesno "Установить Docker через официальный скрипт get.docker.com?" || return
-  ui_msg "Устанавливаю Docker..."
+  ui_yesno "Install Docker via the official get.docker.com script?" || return
+  ui_msg "Installing Docker..."
   fetch - https://get.docker.com | $SUDO sh
   $SUDO systemctl enable --now docker 2>/dev/null
   if [ -n "$SUDO" ]; then
     $SUDO usermod -aG docker "$USER"
-    ui_msg "Пользователь $USER добавлен в группу docker — перелогинься, чтобы работало без sudo."
+    ui_msg "User $USER added to the docker group - re-login to use it without sudo."
   fi
   docker --version >/dev/tty 2>&1
   pause
 }
 
 dk_stacks() {
-  command -v docker >/dev/null 2>&1 || { ui_msg "Сначала установи Docker."; pause; return; }
+  command -v docker >/dev/null 2>&1 || { ui_msg "Install Docker first."; pause; return; }
   local sel t
-  sel=$(ui_checklist "Готовые стеки — отметь галочками" \
-    "portainer|Portainer — веб-панель Docker (порт 9443)" \
-    "npm|Nginx Proxy Manager — реверс-прокси + HTTPS (порт 81)" \
-    "watchtower|Watchtower — автообновление контейнеров") || return
-  [ -n "$sel" ] || { ui_msg "Ничего не выбрано."; pause; return; }
+  sel=$(ui_checklist "Ready-made stacks - tick the boxes" \
+    "portainer|Portainer - Docker web panel (port 9443)" \
+    "npm|Nginx Proxy Manager - reverse proxy + HTTPS (port 81)" \
+    "watchtower|Watchtower - auto-update containers") || return
+  [ -n "$sel" ] || { ui_msg "Nothing selected."; pause; return; }
   while IFS= read -r t; do
     [ -n "$t" ] || continue
     if declare -F "dk_deploy_$t" >/dev/null; then "dk_deploy_$t"; fi
@@ -747,7 +747,7 @@ dk_deploy_portainer() {
     -p 8000:8000 -p 9443:9443 \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v portainer_data:/data portainer/portainer-ce:latest
-  ui_msg "Portainer поднят: https://<IP-сервера>:9443 (при первом входе задашь пароль admin)."
+  ui_msg "Portainer is up: https://<server-IP>:9443 (set the admin password on first login)."
 }
 
 dk_deploy_npm() {
@@ -767,7 +767,7 @@ services:
       - ./letsencrypt:/etc/letsencrypt
 YML
   ( cd "$dir" && $SUDO docker compose up -d )
-  ui_msg "Nginx Proxy Manager: http://<IP-сервера>:81" "Вход по умолчанию: admin@example.com / changeme"
+  ui_msg "Nginx Proxy Manager: http://<server-IP>:81" "Default login: admin@example.com / changeme"
 }
 
 dk_deploy_watchtower() {
@@ -775,12 +775,12 @@ dk_deploy_watchtower() {
   $SUDO docker run -d --name watchtower --restart=always \
     -v /var/run/docker.sock:/var/run/docker.sock \
     containrrr/watchtower --cleanup
-  ui_msg "Watchtower запущен — контейнеры будут обновляться автоматически."
+  ui_msg "Watchtower started - containers will update automatically."
 }
 
 dk_status() {
-  command -v docker >/dev/null 2>&1 || { ui_msg "Docker не установлен."; pause; return; }
-  { $SUDO docker ps; printf '\n--- compose-проекты ---\n'; $SUDO docker compose ls 2>/dev/null; } 2>&1 | page
+  command -v docker >/dev/null 2>&1 || { ui_msg "Docker is not installed."; pause; return; }
+  { $SUDO docker ps; printf '\n--- compose projects ---\n'; $SUDO docker compose ls 2>/dev/null; } 2>&1 | page
   pause
 }
 
@@ -796,14 +796,14 @@ sec_wireguard() {
   local pick
   while :; do
     pick=$(ui_menu "WireGuard VPN" \
-      "Поднять сервер" \
-      "Добавить клиента (QR)" \
-      "Статус / список клиентов" \
-      "← Назад") || return
+      "Set up server" \
+      "Add client (QR)" \
+      "Status / client list" \
+      "<- Back") || return
     case "$pick" in
-      "Поднять сервер")   wg_setup_server ;;
-      "Добавить клиента"*) wg_add_client ;;
-      "Статус"*)          wg_status ;;
+      "Set up server")   wg_setup_server ;;
+      "Add client"*) wg_add_client ;;
+      "Status"*)          wg_status ;;
       *) return ;;
     esac
   done
@@ -814,14 +814,14 @@ wg_setup_server() {
   ensure_pkg iptables >/dev/null 2>&1 || true
   ensure_pkg qrencode >/dev/null 2>&1 || true
   if [ -f "$WG_CONF" ]; then
-    ui_yesno "Сервер wg0 уже настроен. Перенастроить заново (сотрёт клиентов)?" || return
+    ui_yesno "Server wg0 is already configured. Reconfigure from scratch (wipes clients)?" || return
     $SUDO systemctl stop wg-quick@wg0 2>/dev/null
   fi
   local nic pub port skey spub
   nic=$(ip route 2>/dev/null | awk '/default/{print $5; exit}')
   pub=$(fetch - https://api.ipify.org 2>/dev/null)
-  pub=$(ui_input "Внешний IP/домен сервера" "${pub:-}"); [ -n "$pub" ] || return
-  port=$(ui_input "UDP-порт" "$WG_PORT")
+  pub=$(ui_input "Server external IP/domain" "${pub:-}"); [ -n "$pub" ] || return
+  port=$(ui_input "UDP port" "$WG_PORT")
   skey=$(wg genkey); spub=$(printf '%s' "$skey" | wg pubkey)
   $SUDO mkdir -p /etc/wireguard
   $SUDO tee "$WG_CONF" >/dev/null <<CONF
@@ -839,14 +839,14 @@ CONF
   $SUDO sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1
   command -v ufw >/dev/null 2>&1 && $SUDO ufw allow "${port}/udp" >/dev/null 2>&1
   $SUDO systemctl enable --now wg-quick@wg0
-  ui_msg "Сервер WireGuard поднят (wg0, сеть ${WG_NET}.0/24, порт ${port})." \
-         "Теперь добавь клиента, чтобы получить конфиг с QR."
+  ui_msg "WireGuard server is up (wg0, network ${WG_NET}.0/24, port ${port})." \
+         "Now add a client to get a config with a QR code."
   pause
 }
 
 wg_add_client() {
-  [ -f "$WG_CONF" ] || { ui_msg "Сначала подними сервер."; pause; return; }
-  local name; name=$(ui_input "Имя клиента (латиницей)" "client1"); [ -n "$name" ] || return
+  [ -f "$WG_CONF" ] || { ui_msg "Set up the server first."; pause; return; }
+  local name; name=$(ui_input "Client name (Latin letters)" "client1"); [ -n "$name" ] || return
   local spriv spub endpoint n ip ckey cpub psk out ccfg
   spriv=$($SUDO grep -m1 '^PrivateKey' "$WG_CONF" | awk '{print $3}')
   spub=$(printf '%s' "$spriv" | wg pubkey)
@@ -863,7 +863,7 @@ PublicKey = ${cpub}
 PresharedKey = ${psk}
 AllowedIPs = ${ip}/32
 PEER
-  # применить на лету, иначе — перезапуск интерфейса
+  # apply live, otherwise restart the interface
   $SUDO wg set wg0 peer "$cpub" preshared-key <(printf '%s' "$psk") allowed-ips "${ip}/32" 2>/dev/null \
     || $SUDO systemctl restart wg-quick@wg0
   ccfg="[Interface]
@@ -877,89 +877,89 @@ PresharedKey = ${psk}
 Endpoint = ${endpoint}
 AllowedIPs = 0.0.0.0/0
 PersistentKeepalive = 25"
-  { printf '\n=== Конфиг клиента %s ===\n\n%s\n\n' "$name" "$ccfg"; } >/dev/tty
+  { printf '\n=== Client config %s ===\n\n%s\n\n' "$name" "$ccfg"; } >/dev/tty
   if command -v qrencode >/dev/null 2>&1; then
-    { printf '=== QR (сканируй в приложении WireGuard) ===\n\n'; } >/dev/tty
+    { printf '=== QR (scan it in the WireGuard app) ===\n\n'; } >/dev/tty
     printf '%s' "$ccfg" | qrencode -t ansiutf8 >/dev/tty
   else
-    ui_msg "Установи пакет qrencode для QR-кода. Конфиг выше скопируй вручную."
+    ui_msg "Install the qrencode package for a QR code. Copy the config above manually."
   fi
   out="/etc/wireguard/${name}.conf"
   printf '%s\n' "$ccfg" | $SUDO tee "$out" >/dev/null
   $SUDO chmod 600 "$out"
-  ui_msg "Конфиг клиента сохранён: $out"
+  ui_msg "Client config saved: $out"
   pause
 }
 
 wg_status() {
-  command -v wg >/dev/null 2>&1 || { ui_msg "WireGuard не установлен."; pause; return; }
+  command -v wg >/dev/null 2>&1 || { ui_msg "WireGuard is not installed."; pause; return; }
   {
     $SUDO wg show
-    printf '\nКлиенты в конфиге:\n'
-    $SUDO grep '# HH_CLIENT=' "$WG_CONF" 2>/dev/null | sed 's/# HH_CLIENT=/  - /' || printf '  (нет)\n'
+    printf '\nClients in the config:\n'
+    $SUDO grep '# HH_CLIENT=' "$WG_CONF" 2>/dev/null | sed 's/# HH_CLIENT=/  - /' || printf '  (none)\n'
   } 2>&1 | page
   pause
 }
 
 # ===========================================================================
-# ПОЛЬЗОВАТЕЛИ И ДОСТУП
+# USERS AND ACCESS
 # ===========================================================================
 
 sec_users() {
   local pick
   while :; do
-    pick=$(ui_menu "Пользователи и доступ" \
-      "Создать sudo-пользователя" \
-      "Добавить SSH-ключ пользователю" \
-      "Сменить порт SSH" \
-      "Обратный SSH-туннель (доступ за NAT)" \
-      "Бэкап по расписанию (rsync + cron)" \
-      "← Назад") || return
+    pick=$(ui_menu "Users & access" \
+      "Create sudo user" \
+      "Add SSH key to a user" \
+      "Change SSH port" \
+      "Reverse SSH tunnel (access behind NAT)" \
+      "Scheduled backup (rsync + cron)" \
+      "<- Back") || return
     case "$pick" in
-      "Создать sudo"*)   usr_add ;;
-      "Добавить SSH"*)   usr_addkey ;;
-      "Сменить порт SSH") usr_sshport ;;
-      "Обратный SSH"*)   usr_revssh ;;
-      "Бэкап"*)          usr_backup ;;
+      "Create sudo"*)   usr_add ;;
+      "Add SSH"*)   usr_addkey ;;
+      "Change SSH port") usr_sshport ;;
+      "Reverse SSH"*)   usr_revssh ;;
+      "Scheduled backup"*)          usr_backup ;;
       *) return ;;
     esac
   done
 }
 
 usr_add() {
-  local u; u=$(ui_input "Имя нового пользователя" ""); [ -n "$u" ] || return
-  if id "$u" >/dev/null 2>&1; then ui_msg "Пользователь $u уже существует."; pause; return; fi
+  local u; u=$(ui_input "New user name" ""); [ -n "$u" ] || return
+  if id "$u" >/dev/null 2>&1; then ui_msg "User $u already exists."; pause; return; fi
   $SUDO adduser --disabled-password --gecos "" "$u"
-  ui_msg "Задай пароль для $u (ввод скрыт):"
+  ui_msg "Set a password for $u (input hidden):"
   $SUDO passwd "$u" </dev/tty
   $SUDO usermod -aG sudo "$u"
-  ui_msg "Пользователь $u создан и добавлен в группу sudo."
+  ui_msg "User $u created and added to the sudo group."
   pause
 }
 
 usr_addkey() {
   local u key dir
-  u=$(ui_input "Пользователь" "$USER"); [ -n "$u" ] || return
-  id "$u" >/dev/null 2>&1 || { ui_msg "Нет такого пользователя: $u"; pause; return; }
-  key=$(ui_input "Вставь публичный SSH-ключ (ssh-ed25519/ssh-rsa ...)" "")
-  case "$key" in ssh-*) : ;; *) ui_msg "Это не похоже на публичный ключ (должен начинаться с ssh-)."; pause; return ;; esac
+  u=$(ui_input "User" "$USER"); [ -n "$u" ] || return
+  id "$u" >/dev/null 2>&1 || { ui_msg "No such user: $u"; pause; return; }
+  key=$(ui_input "Paste the public SSH key (ssh-ed25519/ssh-rsa ...)" "")
+  case "$key" in ssh-*) : ;; *) ui_msg "This does not look like a public key (must start with ssh-)."; pause; return ;; esac
   dir=$(getent passwd "$u" | cut -d: -f6)/.ssh
   $SUDO mkdir -p "$dir"
   printf '%s\n' "$key" | $SUDO tee -a "$dir/authorized_keys" >/dev/null
   $SUDO chmod 700 "$dir"; $SUDO chmod 600 "$dir/authorized_keys"
   $SUDO chown -R "$u:$u" "$dir"
-  ui_msg "Ключ добавлен пользователю $u."
+  ui_msg "Key added for user $u."
   pause
 }
 
 usr_sshport() {
   local cur p d f
   cur=$(ssh_port)
-  p=$(ui_input "Новый порт SSH" "$cur"); [ -n "$p" ] || return
-  case "$p" in ''|*[!0-9]*) ui_msg "Порт должен быть числом."; pause; return ;; esac
-  ui_msg "ВНИМАНИЕ: открою порт $p в UFW, затем сменю порт и перезапущу SSH." \
-         "НЕ закрывай текущую сессию, пока не проверишь вход на новом порту!"
-  ui_yesno "Продолжить?" || return
+  p=$(ui_input "New SSH port" "$cur"); [ -n "$p" ] || return
+  case "$p" in ''|*[!0-9]*) ui_msg "The port must be a number."; pause; return ;; esac
+  ui_msg "WARNING: I'll open port $p in UFW, then change the port and restart SSH." \
+         "Do NOT close the current session until you verify login on the new port!"
+  ui_yesno "Continue?" || return
   command -v ufw >/dev/null 2>&1 && $SUDO ufw allow "${p}/tcp" >/dev/null 2>&1
   d=/etc/ssh/sshd_config.d
   if [ -d "$d" ]; then
@@ -968,42 +968,42 @@ usr_sshport() {
     $SUDO sed -i "s/^#\?Port .*/Port $p/" /etc/ssh/sshd_config
   fi
   $SUDO systemctl restart ssh 2>/dev/null || $SUDO systemctl restart sshd 2>/dev/null
-  log "порт SSH изменён -> $p"
-  ui_msg "SSH теперь на порту $p. Проверь из НОВОГО окна:  ssh -p $p пользователь@хост"
+  log "SSH port changed -> $p"
+  ui_msg "SSH is now on port $p. Verify from a NEW window:  ssh -p $p user@host"
   pause
 }
 
 usr_backup() {
   ensure_pkg rsync || { pause; return; }
   local src dst freq sched mark cronline
-  src=$(ui_input "Что бэкапить (каталог-источник)" "/etc"); [ -n "$src" ] || return
-  dst=$(ui_input "Куда складывать (каталог-назначение)" "/var/backups/hh"); [ -n "$dst" ] || return
-  freq=$(ui_menu "Как часто?" "Ежедневно (03:00)" "Еженедельно (вс 03:00)" "Ежечасно" "← Отмена") || return
+  src=$(ui_input "What to back up (source directory)" "/etc"); [ -n "$src" ] || return
+  dst=$(ui_input "Where to store it (destination directory)" "/var/backups/hh"); [ -n "$dst" ] || return
+  freq=$(ui_menu "How often?" "Daily (03:00)" "Weekly (Sun 03:00)" "Hourly" "<- Cancel") || return
   case "$freq" in
-    "Ежедневно"*)   sched="0 3 * * *" ;;
-    "Еженедельно"*) sched="0 3 * * 0" ;;
-    "Ежечасно")     sched="0 * * * *" ;;
+    "Daily"*)   sched="0 3 * * *" ;;
+    "Weekly"*) sched="0 3 * * 0" ;;
+    "Hourly")     sched="0 * * * *" ;;
     *) return ;;
   esac
   $SUDO mkdir -p "$dst"
   mark="# HH-backup ${src}"
   cronline="${sched} rsync -a --delete '${src}' '${dst}' ${mark}"
   { $SUDO crontab -l 2>/dev/null | grep -vF "$mark"; printf '%s\n' "$cronline"; } | $SUDO crontab -
-  ui_msg "Бэкап настроен: $src -> $dst ($freq)." "Задание записано в crontab root."
+  ui_msg "Backup configured: $src -> $dst ($freq)." "The job is written to root's crontab."
   pause
 }
 
 usr_revssh() {
   ensure_pkg autossh || { pause; return; }
-  ui_msg "Обратный SSH-туннель: машина сама подключается к relay-серверу с белым IP" \
-         "и пробрасывает свой SSH обратно. Нужен уже настроенный SSH-КЛЮЧ к relay" \
-         "(autossh пароль не вводит — проверь, что 'ssh relay' пускает без пароля)."
+  ui_msg "Reverse SSH tunnel: the machine connects out to a relay server with a public IP" \
+         "and forwards its own SSH back. You need an SSH KEY to the relay already set up" \
+         "(autossh does not type a password - make sure 'ssh relay' works without one)."
   local relay rport remote lport name svc
-  relay=$(ui_input "Relay: пользователь@хост (напр. root@vps.example.com)" ""); [ -n "$relay" ] || return
-  rport=$(ui_input "SSH-порт relay" "22")
-  remote=$(ui_input "Порт на relay для проброса (потом: ssh -p ЭТОТ localhost)" "2222")
-  lport=$(ui_input "Локальный порт этой машины" "22")
-  name=$(ui_input "Имя туннеля (латиницей)" "main"); [ -n "$name" ] || return
+  relay=$(ui_input "Relay: user@host (e.g. root@vps.example.com)" ""); [ -n "$relay" ] || return
+  rport=$(ui_input "Relay SSH port" "22")
+  remote=$(ui_input "Port on the relay to forward (then: ssh -p THIS localhost)" "2222")
+  lport=$(ui_input "Local port on this machine" "22")
+  name=$(ui_input "Tunnel name (Latin letters)" "main"); [ -n "$name" ] || return
   svc="hh-revssh-${name}"
   $SUDO tee "/etc/systemd/system/${svc}.service" >/dev/null <<UNIT
 [Unit]
@@ -1026,27 +1026,27 @@ UNIT
   $SUDO systemctl enable --now "$svc"
   sleep 1
   $SUDO systemctl --no-pager --full status "$svc" 2>&1 | head -n 12 >/dev/tty
-  ui_msg "Туннель '${name}' поднят как сервис ${svc}." \
-         "С relay: ssh -p ${remote} localhost — попадёшь на эту машину." \
-         "Если статус failed — проверь SSH-ключ к ${relay}."
+  ui_msg "Tunnel '${name}' is up as service ${svc}." \
+         "From the relay: ssh -p ${remote} localhost - you land on this machine." \
+         "If status is failed - check the SSH key to ${relay}."
   pause
 }
 
 # ===========================================================================
-# СЕТЬ И ВЕБ
+# NETWORK AND WEB
 # ===========================================================================
 
 sec_netweb() {
   local pick
   while :; do
-    pick=$(ui_menu "Сеть и веб" \
-      "Статический IP (netplan)" \
-      "Фаервол UFW (правила и порты)" \
-      "Certbot — HTTPS для nginx" \
-      "← Назад") || return
+    pick=$(ui_menu "Network & web" \
+      "Static IP (netplan)" \
+      "UFW firewall (rules & ports)" \
+      "Certbot - HTTPS for nginx" \
+      "<- Back") || return
     case "$pick" in
-      "Статический IP"*) nw_static ;;
-      "Фаервол UFW"*)    nw_firewall ;;
+      "Static IP"*) nw_static ;;
+      "UFW firewall"*)    nw_firewall ;;
       "Certbot"*)        nw_certbot ;;
       *) return ;;
     esac
@@ -1054,20 +1054,20 @@ sec_netweb() {
 }
 
 nw_static() {
-  command -v netplan >/dev/null 2>&1 || { ui_msg "netplan не найден — нужен Ubuntu-сервер с netplan."; pause; return; }
+  command -v netplan >/dev/null 2>&1 || { ui_msg "netplan not found - you need an Ubuntu server with netplan."; pause; return; }
   local nic cur_ip cur_gw cur_dns ip gw dns dns_yaml f how
   nic=$(ip route 2>/dev/null | awk '/default/{print $5; exit}')
-  nic=$(ui_input "Сетевой интерфейс" "${nic:-eth0}"); [ -n "$nic" ] || return
+  nic=$(ui_input "Network interface" "${nic:-eth0}"); [ -n "$nic" ] || return
   cur_ip=$(ip -o -f inet addr show "$nic" 2>/dev/null | awk '{print $4; exit}')
   cur_gw=$(ip route 2>/dev/null | awk '/default/{print $3; exit}')
   cur_dns=$(grep -h '^nameserver' /etc/resolv.conf 2>/dev/null | awk '{print $2}' | paste -sd, -)
-  ip=$(ui_input "IP/маска (CIDR, напр. 192.168.1.50/24)" "$cur_ip"); [ -n "$ip" ] || return
-  gw=$(ui_input "Шлюз" "$cur_gw")
-  dns=$(ui_input "DNS через запятую" "${cur_dns:-1.1.1.1,8.8.8.8}")
+  ip=$(ui_input "IP/mask (CIDR, e.g. 192.168.1.50/24)" "$cur_ip"); [ -n "$ip" ] || return
+  gw=$(ui_input "Gateway" "$cur_gw")
+  dns=$(ui_input "DNS, comma-separated" "${cur_dns:-1.1.1.1,8.8.8.8}")
   dns_yaml=$(printf '%s' "$dns" | sed 's/ *, */, /g')
-  ui_msg "ВНИМАНИЕ: смена IP разорвёт SSH-сессию, если адрес меняется!" \
-         "Убедись, что подключишься по новому адресу."
-  ui_yesno "Записать конфиг?" || return
+  ui_msg "WARNING: changing the IP will drop the SSH session if the address changes!" \
+         "Make sure you can reconnect on the new address."
+  ui_yesno "Write the config?" || return
   f=/etc/netplan/99-hh.yaml
   $SUDO tee "$f" >/dev/null <<YAML
 network:
@@ -1083,27 +1083,27 @@ network:
         addresses: [${dns_yaml}]
 YAML
   $SUDO chmod 600 "$f"
-  how=$(ui_menu "Как применить?" \
-    "netplan try (безопасно — автооткат через 120 c)" \
-    "netplan apply (сразу)" \
-    "Только записать, не применять") || return
+  how=$(ui_menu "How to apply?" \
+    "netplan try (safe - auto-rollback after 120s)" \
+    "netplan apply (immediately)" \
+    "Write config only, do not apply") || return
   case "$how" in
     "netplan try"*)   $SUDO netplan try </dev/tty ;;
-    "netplan apply"*) log "статический IP $ip на $nic (шлюз $gw)"; $SUDO netplan apply && ui_msg "Применено. Новый адрес: $ip" ;;
-    *) ui_msg "Конфиг записан в $f, не применён." ;;
+    "netplan apply"*) log "static IP $ip on $nic (gateway $gw)"; $SUDO netplan apply && ui_msg "Applied. New address: $ip" ;;
+    *) ui_msg "Config written to $f, not applied." ;;
   esac
   pause
 }
 
 nw_certbot() {
-  command -v nginx >/dev/null 2>&1 || ui_msg "nginx не установлен — сертификат прописывается в его конфиг. Поставь nginx в разделе «Установка»."
+  command -v nginx >/dev/null 2>&1 || ui_msg "nginx is not installed - the cert is written into its config. Install nginx under 'Install packages'."
   ensure_pkg certbot || { pause; return; }
   ensure_pkg python3-certbot-nginx || { pause; return; }
   local domain email args=() d
-  domain=$(ui_input "Домен (несколько — через пробел)" ""); [ -n "$domain" ] || return
-  email=$(ui_input "Email для Let's Encrypt (пусто — без email)" "")
-  ui_msg "Требуется: домен указывает на этот сервер (A-запись), порт 80 открыт, nginx запущен."
-  ui_yesno "Получить сертификат сейчас?" || return
+  domain=$(ui_input "Domain (several - space-separated)" ""); [ -n "$domain" ] || return
+  email=$(ui_input "Email for Let's Encrypt (empty - no email)" "")
+  ui_msg "Required: the domain points to this server (A record), port 80 open, nginx running."
+  ui_yesno "Get the certificate now?" || return
   for d in $domain; do args+=(-d "$d"); done
   if [ -n "$email" ]; then
     $SUDO certbot --nginx "${args[@]}" -m "$email" --agree-tos -n --redirect 2>&1 | page
@@ -1113,7 +1113,7 @@ nw_certbot() {
   pause
 }
 
-# текущий порт SSH (для защиты от самоблокировки в правилах UFW)
+# current SSH port (to avoid self-lockout in UFW rules)
 ssh_port() {
   local p
   p=$($SUDO grep -rhm1 '^Port ' /etc/ssh/sshd_config /etc/ssh/sshd_config.d/ 2>/dev/null | awk '{print $2; exit}')
@@ -1126,57 +1126,57 @@ nw_firewall() {
   local pick p ip n cur sshp
   sshp=$(ssh_port)
   while :; do
-    pick=$(ui_menu "Фаервол UFW (SSH сейчас на порту $sshp)" \
-      "Статус и правила (с номерами)" \
-      "Открыть порт" \
-      "Удалить правило по номеру" \
-      "Разрешить всё с одного IP" \
-      "Включить фаервол" \
-      "Выключить фаервол" \
-      "Сброс к безопасному минимуму (только SSH)" \
-      "← Назад") || return
+    pick=$(ui_menu "UFW firewall (SSH is currently on port $sshp)" \
+      "Status and rules (numbered)" \
+      "Open a port" \
+      "Delete rule by number" \
+      "Allow everything from one IP" \
+      "Enable firewall" \
+      "Disable firewall" \
+      "Reset to safe minimum (SSH only)" \
+      "<- Back") || return
     case "$pick" in
-      "Статус"*)
+      "Status"*)
         $SUDO ufw status numbered verbose 2>&1 | page
         pause ;;
-      "Открыть порт")
-        p=$(ui_input "Порт (можно 8080/tcp, 5000:5010/udp)" "")
+      "Open a port")
+        p=$(ui_input "Port (e.g. 8080/tcp, 5000:5010/udp)" "")
         [ -n "$p" ] || continue
         case "$p" in *[/:]*) : ;; *) p="${p}/tcp" ;; esac
         $SUDO ufw allow "$p" >/dev/tty 2>&1
         pause ;;
-      "Удалить правило"*)
+      "Delete rule"*)
         $SUDO ufw status numbered >/dev/tty 2>&1
-        n=$(ui_input "Номер правила для удаления" "")
-        case "$n" in ''|*[!0-9]*) ui_msg "Номер должен быть числом."; pause; continue ;; esac
+        n=$(ui_input "Rule number to delete" "")
+        case "$n" in ''|*[!0-9]*) ui_msg "The number must be numeric."; pause; continue ;; esac
         cur=$($SUDO ufw status numbered 2>/dev/null | awk -v n="[$n]" '$1==n')
-        [ -n "$cur" ] || { ui_msg "Нет правила с номером $n."; pause; continue; }
-        ui_msg "Правило: $cur"
+        [ -n "$cur" ] || { ui_msg "No rule with number $n."; pause; continue; }
+        ui_msg "Rule: $cur"
         if printf '%s' "$cur" | grep -qE "(^|[^0-9])${sshp}(/|[[:space:]])|OpenSSH|(^|[[:space:]])SSH"; then
-          ui_msg "ВНИМАНИЕ: это правило для SSH (порт $sshp) — можно потерять доступ к серверу."
+          ui_msg "WARNING: this is an SSH rule (port $sshp) - you may lose access to the server."
         fi
-        ui_yesno "Точно удалить?" || continue
+        ui_yesno "Really delete?" || continue
         $SUDO ufw --force delete "$n" >/dev/tty 2>&1
         pause ;;
-      "Разрешить всё"*)
-        ip=$(ui_input "IP-адрес (напр. 192.168.1.10)" "")
+      "Allow everything"*)
+        ip=$(ui_input "IP address (e.g. 192.168.1.10)" "")
         [ -n "$ip" ] || continue
         $SUDO ufw allow from "$ip" >/dev/tty 2>&1
         pause ;;
-      "Включить фаервол")
+      "Enable firewall")
         if ! $SUDO ufw status 2>/dev/null | grep -qE "(^|[[:space:]])(${sshp}(/tcp)?|OpenSSH)([[:space:]]|$)"; then
-          ui_msg "SSH ($sshp) не разрешён в правилах — добавляю, иначе потеряешь доступ."
+          ui_msg "SSH ($sshp) is not allowed in the rules - adding it, otherwise you lose access."
           $SUDO ufw allow "${sshp}/tcp" >/dev/null 2>&1
         fi
         $SUDO ufw --force enable >/dev/tty 2>&1
         pause ;;
-      "Выключить фаервол")
+      "Disable firewall")
         $SUDO ufw disable >/dev/tty 2>&1
         pause ;;
-      "Сброс"*)
-        ui_msg "Сброс удалит ВСЕ правила и оставит только SSH ($sshp):" \
-               "входящие — запрещены, исходящие — разрешены."
-        ui_yesno "Продолжить?" || continue
+      "Reset"*)
+        ui_msg "Reset will remove ALL rules and keep only SSH ($sshp):" \
+               "incoming - denied, outgoing - allowed."
+        ui_yesno "Continue?" || continue
         $SUDO ufw --force reset >/dev/null 2>&1
         $SUDO ufw default deny incoming >/dev/null 2>&1
         $SUDO ufw default allow outgoing >/dev/null 2>&1
@@ -1190,25 +1190,25 @@ nw_firewall() {
 }
 
 # ===========================================================================
-# ОБСЛУЖИВАНИЕ И МОНИТОРИНГ
+# MAINTENANCE AND MONITORING
 # ===========================================================================
 
 sec_maint() {
   local pick
   while :; do
-    pick=$(ui_menu "Обслуживание и мониторинг" \
-      "Чистка системы (освободить место)" \
-      "netdata — веб-мониторинг" \
-      "SSH-логи и fail2ban" \
-      "Задачи по расписанию (cron)" \
-      "Журналы (journalctl, dmesg)" \
-      "← Назад") || return
+    pick=$(ui_menu "Maintenance & monitoring" \
+      "Clean up system (free space)" \
+      "netdata - web monitoring" \
+      "SSH logs & fail2ban" \
+      "Scheduled tasks (cron)" \
+      "Logs (journalctl, dmesg)" \
+      "<- Back") || return
     case "$pick" in
-      "Чистка"*)   mt_clean ;;
+      "Clean up"*)   mt_clean ;;
       "netdata"*)  mt_netdata ;;
-      "SSH-логи"*) mt_sshlog ;;
-      "Задачи по расписанию"*) mt_cron ;;
-      "Журналы"*)  mt_logs ;;
+      "SSH logs"*) mt_sshlog ;;
+      "Scheduled tasks"*) mt_cron ;;
+      "Logs"*)  mt_logs ;;
       *) return ;;
     esac
   done
@@ -1217,72 +1217,72 @@ sec_maint() {
 mt_clean() {
   local before after
   before=$(df -h / | awk 'NR==2{print $4}')
-  ui_msg "Будет: apt autoremove/clean + чистка журналов старше 7 дней" \
-         "(и docker prune, если Docker установлен — с отдельным подтверждением)."
-  ui_yesno "Продолжить чистку?" || return
+  ui_msg "Will do: apt autoremove/clean + vacuum journals older than 7 days" \
+         "(and docker prune, if Docker is installed - with a separate confirmation)."
+  ui_yesno "Continue cleanup?" || return
   $SUDO apt-get autoremove --purge -y
   $SUDO apt-get clean
   $SUDO journalctl --vacuum-time=7d 2>&1 | tail -n 3 >/dev/tty
   if command -v docker >/dev/null 2>&1; then
-    if ui_yesno "docker system prune -af (удалит неиспользуемые образы/тома)?"; then
+    if ui_yesno "docker system prune -af (remove unused images/volumes)?"; then
       $SUDO docker system prune -af
     fi
   fi
   after=$(df -h / | awk 'NR==2{print $4}')
-  ui_msg "Свободно на /:  было $before  →  стало $after"
+  ui_msg "Free on /:  was $before  ->  now $after"
   pause
 }
 
 mt_netdata() {
   if systemctl is-active --quiet netdata 2>/dev/null || command -v netdata >/dev/null 2>&1; then
-    ui_msg "netdata уже установлен. Веб-панель: http://<IP-сервера>:19999"
+    ui_msg "netdata is already installed. Web panel: http://<server-IP>:19999"
     systemctl status netdata --no-pager 2>&1 | head -n 6 >/dev/tty
     pause; return
   fi
-  ui_yesno "Установить netdata (официальный установщик)?" || return
-  ui_msg "Ставлю netdata..."
+  ui_yesno "Install netdata (official installer)?" || return
+  ui_msg "Installing netdata..."
   fetch - https://get.netdata.cloud/kickstart.sh | $SUDO sh -s -- --dont-wait --disable-telemetry
-  if command -v ufw >/dev/null 2>&1 && ui_yesno "Открыть порт 19999 в UFW?"; then
+  if command -v ufw >/dev/null 2>&1 && ui_yesno "Open port 19999 in UFW?"; then
     $SUDO ufw allow 19999/tcp >/dev/null 2>&1
   fi
-  ui_msg "Готово. Веб-панель: http://<IP-сервера>:19999"
+  ui_msg "Done. Web panel: http://<server-IP>:19999"
   pause
 }
 
 mt_sshlog() {
   local pick ipp
   while :; do
-    pick=$(ui_menu "SSH-логи и fail2ban" \
-      "Последние входы" \
-      "Неудачные попытки входа" \
-      "Забаненные IP (fail2ban)" \
-      "Разбанить IP (fail2ban)" \
-      "← Назад") || return
+    pick=$(ui_menu "SSH logs & fail2ban" \
+      "Recent logins" \
+      "Failed login attempts" \
+      "Banned IPs (fail2ban)" \
+      "Unban IP (fail2ban)" \
+      "<- Back") || return
     case "$pick" in
-      "Последние входы")
+      "Recent logins")
         { echo "# last -n 20:"; last -n 20 2>/dev/null; } | page ;;
-      "Неудачные"*)
+      "Failed"*)
         {
           if [ -f /var/log/auth.log ]; then
             $SUDO grep -a 'Failed password' /var/log/auth.log 2>/dev/null | tail -n 30
           else
             $SUDO journalctl _COMM=sshd 2>/dev/null | grep -a 'Failed password' | tail -n 30
           fi
-          echo "(если пусто — неудачных попыток нет или логи в другом месте)"
+          echo "(if empty - no failed attempts, or logs are elsewhere)"
         } | page ;;
-      "Забаненные"*)
+      "Banned"*)
         if command -v fail2ban-client >/dev/null 2>&1; then
           $SUDO fail2ban-client status sshd 2>&1 | page
         else
-          ui_msg "fail2ban не установлен (поставь в разделе «Твики»)."; pause
+          ui_msg "fail2ban is not installed (install it under 'Server tweaks')."; pause
         fi ;;
-      "Разбанить"*)
+      "Unban"*)
         if command -v fail2ban-client >/dev/null 2>&1; then
-          ipp=$(ui_input "IP для разбана" ""); [ -n "$ipp" ] || continue
+          ipp=$(ui_input "IP to unban" ""); [ -n "$ipp" ] || continue
           $SUDO fail2ban-client set sshd unbanip "$ipp" >/dev/tty 2>&1
-          ui_msg "Разбанен: $ipp"; pause
+          ui_msg "Unbanned: $ipp"; pause
         else
-          ui_msg "fail2ban не установлен."; pause
+          ui_msg "fail2ban is not installed."; pause
         fi ;;
       *) return ;;
     esac
@@ -1292,56 +1292,56 @@ mt_sshlog() {
 mt_cron() {
   local pick cmd sched line n list
   while :; do
-    pick=$(ui_menu "Задачи по расписанию (cron)" \
-      "Показать задачи" \
-      "Добавить задачу" \
-      "Удалить задачу" \
-      "← Назад") || return
+    pick=$(ui_menu "Scheduled tasks (cron)" \
+      "Show tasks" \
+      "Add task" \
+      "Delete task" \
+      "<- Back") || return
     case "$pick" in
-      "Показать"*)
+      "Show tasks"*)
         {
-          printf '\n# crontab root\n'
-          $SUDO crontab -l 2>/dev/null || printf '  (пусто)\n'
-          printf '\n# crontab %s\n' "$USER"
-          crontab -l 2>/dev/null || printf '  (пусто)\n'
-          printf '\n# системные задания (/etc/cron.d)\n'
+          printf '\n# root crontab\n'
+          $SUDO crontab -l 2>/dev/null || printf '  (empty)\n'
+          printf '\n# %s crontab\n' "$USER"
+          crontab -l 2>/dev/null || printf '  (empty)\n'
+          printf '\n# system jobs (/etc/cron.d)\n'
           find /etc/cron.d -maxdepth 1 -type f -printf '  %f\n' 2>/dev/null
         } 2>&1 | page
         pause ;;
-      "Добавить"*)
-        cmd=$(ui_input "Команда (указывай полный путь — у cron бедный PATH)" "")
+      "Add task"*)
+        cmd=$(ui_input "Command (use full paths - cron has a minimal PATH)" "")
         [ -n "$cmd" ] || continue
-        sched=$(ui_menu "Когда запускать?" \
-          "Каждые 5 минут" \
-          "Каждый час" \
-          "Каждый день в 03:00" \
-          "Каждую неделю (вс 03:00)" \
-          "Своя строка cron" \
-          "← Отмена") || continue
+        sched=$(ui_menu "When to run?" \
+          "Every 5 minutes" \
+          "Every hour" \
+          "Every day at 03:00" \
+          "Every week (Sun 03:00)" \
+          "Custom cron line" \
+          "<- Cancel") || continue
         case "$sched" in
-          "Каждые 5"*)      line="*/5 * * * *" ;;
-          "Каждый час")     line="0 * * * *" ;;
-          "Каждый день"*)   line="0 3 * * *" ;;
-          "Каждую неделю"*) line="0 3 * * 0" ;;
-          "Своя строка"*)   line=$(ui_input "Расписание (мин час день месяц день_недели)" "0 3 * * *") ;;
+          "Every 5"*)      line="*/5 * * * *" ;;
+          "Every hour")     line="0 * * * *" ;;
+          "Every day"*)   line="0 3 * * *" ;;
+          "Every week"*) line="0 3 * * 0" ;;
+          "Custom"*)   line=$(ui_input "Schedule (min hour day month weekday)" "0 3 * * *") ;;
           *) continue ;;
         esac
         [ -n "$line" ] || continue
         { $SUDO crontab -l 2>/dev/null; printf '%s %s\n' "$line" "$cmd"; } | $SUDO crontab -
-        ui_msg "Добавлено в crontab root:" "$line $cmd"
+        ui_msg "Added to root's crontab:" "$line $cmd"
         pause ;;
-      "Удалить"*)
+      "Delete task"*)
         list=$($SUDO crontab -l 2>/dev/null | grep -vE '^[[:space:]]*($|#)')
-        [ -n "$list" ] || { ui_msg "У root нет задач."; pause; continue; }
+        [ -n "$list" ] || { ui_msg "root has no tasks."; pause; continue; }
         { printf '\n'; printf '%s\n' "$list" | nl -w2 -s') '; } >/dev/tty
-        n=$(ui_input "Номер задачи для удаления" "")
-        case "$n" in ''|*[!0-9]*) ui_msg "Номер должен быть числом."; pause; continue ;; esac
+        n=$(ui_input "Task number to delete" "")
+        case "$n" in ''|*[!0-9]*) ui_msg "The number must be numeric."; pause; continue ;; esac
         cmd=$(printf '%s\n' "$list" | sed -n "${n}p")
-        [ -n "$cmd" ] || { ui_msg "Нет задачи №$n."; pause; continue; }
-        ui_msg "Удаляю: $cmd"
-        ui_yesno "Точно?" || continue
+        [ -n "$cmd" ] || { ui_msg "No task #$n."; pause; continue; }
+        ui_msg "Deleting: $cmd"
+        ui_yesno "Sure?" || continue
         $SUDO crontab -l 2>/dev/null | grep -vxF "$cmd" | $SUDO crontab -
-        ui_msg "Удалено."
+        ui_msg "Deleted."
         pause ;;
       *) return ;;
     esac
@@ -1351,33 +1351,33 @@ mt_cron() {
 mt_logs() {
   local pick u n q
   while :; do
-    pick=$(ui_menu "Журналы" \
-      "Последние ошибки системы" \
-      "Лог службы" \
-      "Сообщения ядра (dmesg)" \
-      "Поиск по журналу" \
-      "Размер журналов и чистка" \
-      "← Назад") || return
+    pick=$(ui_menu "Logs" \
+      "Recent system errors" \
+      "Service log" \
+      "Kernel messages (dmesg)" \
+      "Search the journal" \
+      "Journal size & cleanup" \
+      "<- Back") || return
     case "$pick" in
-      "Последние ошибки"*)
+      "Recent system errors"*)
         $SUDO journalctl -p err -n 100 --no-pager 2>&1 | page
         pause ;;
-      "Лог службы")
+      "Service log")
         u=$(svc_pick) || continue
-        n=$(ui_input "Сколько последних строк" "200")
+        n=$(ui_input "How many last lines" "200")
         $SUDO journalctl -u "$u" -n "${n:-200}" --no-pager 2>&1 | page
         pause ;;
-      "Сообщения ядра"*)
+      "Kernel messages"*)
         $SUDO dmesg -T 2>&1 | tail -n 200 | page
         pause ;;
-      "Поиск по журналу")
-        q=$(ui_input "Что искать (например: error, sshd, timeout)" "")
+      "Search the journal")
+        q=$(ui_input "What to search for (e.g. error, sshd, timeout)" "")
         [ -n "$q" ] || continue
         $SUDO journalctl --no-pager -n 5000 2>/dev/null | grep -iF -- "$q" | tail -n 200 | page
         pause ;;
-      "Размер журналов"*)
+      "Journal size"*)
         $SUDO journalctl --disk-usage >/dev/tty 2>&1
-        if ui_yesno "Ужать журналы до 200 МБ?"; then
+        if ui_yesno "Shrink journals to 200 MB?"; then
           $SUDO journalctl --vacuum-size=200M 2>&1 | tail -n 3 | page
         fi
         pause ;;
@@ -1387,36 +1387,36 @@ mt_logs() {
 }
 
 # ===========================================================================
-# СЛУЖБЫ И ПРОЦЕССЫ
+# SERVICES AND PROCESSES
 # ===========================================================================
 
 sec_services() {
   local pick
   while :; do
-    pick=$(ui_menu "Службы и процессы" \
-      "Список служб" \
-      "Управление службой" \
-      "Лог службы" \
-      "Кто занял порт" \
-      "Убить процесс" \
-      "Топ процессов" \
-      "← Назад") || return
+    pick=$(ui_menu "Services & processes" \
+      "List services" \
+      "Manage a service" \
+      "Service log" \
+      "Who holds a port" \
+      "Kill a process" \
+      "Top processes" \
+      "<- Back") || return
     case "$pick" in
-      "Список служб")     svc_list ;;
-      "Управление службой") svc_manage ;;
-      "Лог службы")       svc_log ;;
-      "Кто занял порт")   svc_port ;;
-      "Убить процесс")    svc_kill ;;
-      "Топ процессов")    svc_top ;;
+      "List services")     svc_list ;;
+      "Manage a service") svc_manage ;;
+      "Service log")       svc_log ;;
+      "Who holds a port")   svc_port ;;
+      "Kill a process")    svc_kill ;;
+      "Top processes")    svc_top ;;
       *) return ;;
     esac
   done
 }
 
-# выбрать systemd-юнит: имя службы в stdout, 1 — если отменили
+# pick a systemd unit: service name to stdout, 1 - if cancelled
 svc_pick() {
   local f units=() u sel
-  f=$(ui_input "Часть имени службы (пусто — показать работающие)" "")
+  f=$(ui_input "Part of a service name (empty - show running)" "")
   if [ -n "$f" ]; then
     while IFS= read -r u; do
       [ -n "$u" ] && units+=("$u")
@@ -1429,31 +1429,31 @@ svc_pick() {
              | awk '{print $1}' | head -n 30)
   fi
   if [ "${#units[@]}" -eq 0 ]; then
-    { ui_msg "Служб не найдено."; pause; } >/dev/tty
+    { ui_msg "No services found."; pause; } >/dev/tty
     return 1
   fi
-  sel=$(ui_menu "Выбери службу" "${units[@]}" "← Назад") || return 1
-  if [ -z "$sel" ] || [ "$sel" = "← Назад" ]; then return 1; fi
+  sel=$(ui_menu "Choose a service" "${units[@]}" "<- Back") || return 1
+  if [ -z "$sel" ] || [ "$sel" = "<- Back" ]; then return 1; fi
   printf '%s' "$sel"
 }
 
 svc_list() {
   local what f
-  what=$(ui_menu "Какие службы показать?" \
-    "Работающие" \
-    "Упавшие (failed)" \
-    "С автозапуском" \
-    "Поиск по имени" \
-    "← Назад") || return
+  what=$(ui_menu "Which services to show?" \
+    "Running" \
+    "Failed" \
+    "Enabled at boot" \
+    "Search by name" \
+    "<- Back") || return
   case "$what" in
-    "Работающие")
+    "Running")
       $SUDO systemctl list-units --type=service --state=running --no-pager 2>&1 | page ;;
-    "Упавшие"*)
+    "Failed"*)
       $SUDO systemctl list-units --type=service --state=failed --no-pager 2>&1 | page ;;
-    "С автозапуском")
+    "Enabled at boot")
       $SUDO systemctl list-unit-files --type=service --state=enabled --no-pager 2>&1 | page ;;
-    "Поиск по имени")
-      f=$(ui_input "Часть имени" ""); [ -n "$f" ] || return
+    "Search by name")
+      f=$(ui_input "Part of the name" ""); [ -n "$f" ] || return
       $SUDO systemctl list-units --type=service --all --no-pager 2>&1 | grep -iF -- "$f" | page ;;
     *) return ;;
   esac
@@ -1465,25 +1465,25 @@ svc_manage() {
   u=$(svc_pick) || return
   while :; do
     { printf '\n'; $SUDO systemctl --no-pager --full status "$u" 2>&1 | head -n 12; } >/dev/tty
-    act=$(ui_menu "Служба $u" \
-      "Перезапустить" \
-      "Остановить" \
-      "Запустить" \
-      "Автозапуск: включить" \
-      "Автозапуск: выключить" \
-      "Показать лог" \
-      "← Назад") || return
+    act=$(ui_menu "Service $u" \
+      "Restart" \
+      "Stop" \
+      "Start" \
+      "Autostart: enable" \
+      "Autostart: disable" \
+      "Show log" \
+      "<- Back") || return
     case "$act" in
-      "Перезапустить") $SUDO systemctl restart "$u" >/dev/tty 2>&1 ;;
-      "Остановить")
+      "Restart") $SUDO systemctl restart "$u" >/dev/tty 2>&1 ;;
+      "Stop")
         case "$u" in
-          ssh*) ui_yesno "Это SSH — остановка оборвёт удалённый доступ. Точно?" || continue ;;
+          ssh*) ui_yesno "This is SSH - stopping it will cut remote access. Sure?" || continue ;;
         esac
         $SUDO systemctl stop "$u" >/dev/tty 2>&1 ;;
-      "Запустить")     $SUDO systemctl start "$u" >/dev/tty 2>&1 ;;
-      "Автозапуск: включить")  $SUDO systemctl enable "$u" >/dev/tty 2>&1 ;;
-      "Автозапуск: выключить") $SUDO systemctl disable "$u" >/dev/tty 2>&1 ;;
-      "Показать лог")  $SUDO journalctl -u "$u" -n 200 --no-pager 2>&1 | page; pause ;;
+      "Start")     $SUDO systemctl start "$u" >/dev/tty 2>&1 ;;
+      "Autostart: enable")  $SUDO systemctl enable "$u" >/dev/tty 2>&1 ;;
+      "Autostart: disable") $SUDO systemctl disable "$u" >/dev/tty 2>&1 ;;
+      "Show log")  $SUDO journalctl -u "$u" -n 200 --no-pager 2>&1 | page; pause ;;
       *) return ;;
     esac
   done
@@ -1492,26 +1492,26 @@ svc_manage() {
 svc_log() {
   local u n
   u=$(svc_pick) || return
-  n=$(ui_input "Сколько последних строк" "200")
+  n=$(ui_input "How many last lines" "200")
   $SUDO journalctl -u "$u" -n "${n:-200}" --no-pager 2>&1 | page
   pause
 }
 
 svc_port() {
   local p
-  p=$(ui_input "Порт (пусто — показать все слушающие)" "")
+  p=$(ui_input "Port (empty - show all listening)" "")
   {
     if [ -n "$p" ]; then
-      printf '# сокеты на порту %s\n' "$p"
+      printf '# sockets on port %s\n' "$p"
       $SUDO ss -tulnp 2>/dev/null | awk -v p=":$p" 'NR==1 || index($5, p)'
       if command -v lsof >/dev/null 2>&1; then
-        printf '\n# процессы (lsof)\n'
+        printf '\n# processes (lsof)\n'
         $SUDO lsof -i ":$p" -n -P 2>/dev/null
       else
-        printf '\n(поставь пакет lsof — покажу процессы подробнее)\n'
+        printf '\n(install the lsof package - I will show processes in more detail)\n'
       fi
     else
-      printf '# все слушающие сокеты\n'
+      printf '# all listening sockets\n'
       $SUDO ss -tulnp 2>/dev/null
     fi
   } 2>&1 | page
@@ -1520,67 +1520,67 @@ svc_port() {
 
 svc_kill() {
   local q pid list name
-  q=$(ui_input "Имя процесса или PID" ""); [ -n "$q" ] || return
+  q=$(ui_input "Process name or PID" ""); [ -n "$q" ] || return
   if [[ $q =~ ^[0-9]+$ ]]; then
     pid=$q
   else
     list=$(pgrep -a -f -- "$q" 2>/dev/null | head -n 20)
-    [ -n "$list" ] || { ui_msg "Не найдено: $q"; pause; return; }
+    [ -n "$list" ] || { ui_msg "Not found: $q"; pause; return; }
     { printf '\n%s\n' "$list"; } >/dev/tty
-    pid=$(ui_input "PID из списка выше" "$(printf '%s' "$list" | awk 'NR==1{print $1}')")
+    pid=$(ui_input "PID from the list above" "$(printf '%s' "$list" | awk 'NR==1{print $1}')")
   fi
-  case "$pid" in ''|*[!0-9]*) ui_msg "PID должен быть числом."; pause; return ;; esac
-  if [ "$pid" = 1 ]; then ui_msg "PID 1 (init) убивать нельзя."; pause; return; fi
+  case "$pid" in ''|*[!0-9]*) ui_msg "The PID must be numeric."; pause; return ;; esac
+  if [ "$pid" = 1 ]; then ui_msg "PID 1 (init) cannot be killed."; pause; return; fi
   name=$(ps -p "$pid" -o comm= 2>/dev/null)
-  [ -n "$name" ] || { ui_msg "Нет процесса с PID $pid."; pause; return; }
+  [ -n "$name" ] || { ui_msg "No process with PID $pid."; pause; return; }
   case "$name" in
-    sshd|systemd) ui_msg "ВНИМАНИЕ: $name — можно потерять доступ к серверу." ;;
+    sshd|systemd) ui_msg "WARNING: $name - you may lose access to the server." ;;
   esac
-  ui_yesno "Убить $pid ($name)?" || return
+  ui_yesno "Kill $pid ($name)?" || return
   $SUDO kill "$pid" 2>/dev/null
   sleep 1
   if ps -p "$pid" >/dev/null 2>&1; then
-    if ui_yesno "Не завершился. Добить kill -9?"; then $SUDO kill -9 "$pid" 2>/dev/null; fi
+    if ui_yesno "Did not exit. Force kill -9?"; then $SUDO kill -9 "$pid" 2>/dev/null; fi
   fi
-  ui_msg "Готово."
+  ui_msg "Done."
   pause
 }
 
 svc_top() {
   local by
-  by=$(ui_menu "Топ процессов" "По CPU" "По памяти" "← Назад") || return
+  by=$(ui_menu "Top processes" "By CPU" "By memory" "<- Back") || return
   case "$by" in
-    "По CPU")    ps aux --sort=-%cpu 2>/dev/null | head -n 25 | page ;;
-    "По памяти") ps aux --sort=-%mem 2>/dev/null | head -n 25 | page ;;
+    "By CPU")    ps aux --sort=-%cpu 2>/dev/null | head -n 25 | page ;;
+    "By memory") ps aux --sort=-%mem 2>/dev/null | head -n 25 | page ;;
     *) return ;;
   esac
   pause
 }
 
 # ===========================================================================
-# ДИСКИ И ХРАНИЛИЩЕ
+# DISKS AND STORAGE
 # ===========================================================================
 
 sec_disks() {
   local pick
   while :; do
-    pick=$(ui_menu "Диски и хранилище" \
-      "Обзор дисков и разделов" \
-      "SMART — здоровье дисков" \
-      "Смонтировать раздел (+ fstab)" \
-      "Отмонтировать" \
-      "Разметить и отформатировать диск" \
-      "Чем занято место" \
-      "Samba-шара (доступ из Windows)" \
-      "NFS-экспорт (доступ из Linux)" \
-      "← Назад") || return
+    pick=$(ui_menu "Disks & storage" \
+      "Disks & partitions overview" \
+      "SMART - disk health" \
+      "Mount a partition (+ fstab)" \
+      "Unmount" \
+      "Partition & format a disk" \
+      "What is using space" \
+      "Samba share (access from Windows)" \
+      "NFS export (access from Linux)" \
+      "<- Back") || return
     case "$pick" in
-      "Обзор дисков"*)  dsk_overview ;;
+      "Disks & partitions"*)  dsk_overview ;;
       "SMART"*)         dsk_smart ;;
-      "Смонтировать"*)  dsk_mount ;;
-      "Отмонтировать")  dsk_umount ;;
-      "Разметить"*)     dsk_format ;;
-      "Чем занято"*)    dsk_space ;;
+      "Mount"*)  dsk_mount ;;
+      "Unmount")  dsk_umount ;;
+      "Partition"*)     dsk_format ;;
+      "What is using"*)    dsk_space ;;
       "Samba"*)         dsk_samba ;;
       "NFS"*)           dsk_nfs ;;
       *) return ;;
@@ -1590,13 +1590,13 @@ sec_disks() {
 
 dsk_overview() {
   {
-    printf '\n# Диски и разделы\n'
+    printf '\n# Disks and partitions\n'
     lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT,MODEL 2>/dev/null
-    printf '\n# Занятость файловых систем\n'
+    printf '\n# Filesystem usage\n'
     df -hT -x tmpfs -x devtmpfs 2>/dev/null
-    printf '\n# Inodes (кончатся — «нет места» при свободных гигабайтах)\n'
+    printf '\n# Inodes (if they run out - "no space" even with free gigabytes)\n'
     df -i -x tmpfs -x devtmpfs 2>/dev/null
-    printf '\n# UUID разделов\n'
+    printf '\n# Partition UUIDs\n'
     $SUDO blkid 2>/dev/null
   } 2>&1 | page
   pause
@@ -1608,29 +1608,29 @@ dsk_smart() {
   while IFS= read -r line; do
     [ -n "$line" ] && list+=("$line")
   done < <(lsblk -dn -e 7,11 -o PATH,SIZE,MODEL 2>/dev/null)
-  [ "${#list[@]}" -gt 0 ] || { ui_msg "Дисков не найдено."; pause; return; }
-  sel=$(ui_menu "Выбери диск" "${list[@]}" "← Назад") || return
-  if [ -z "$sel" ] || [ "$sel" = "← Назад" ]; then return; fi
+  [ "${#list[@]}" -gt 0 ] || { ui_msg "No disks found."; pause; return; }
+  sel=$(ui_menu "Choose a disk" "${list[@]}" "<- Back") || return
+  if [ -z "$sel" ] || [ "$sel" = "<- Back" ]; then return; fi
   dev=${sel%% *}
   act=$(ui_menu "SMART: $dev" \
-    "Здоровье (кратко)" \
-    "Все атрибуты" \
-    "Запустить короткий тест (~2 минуты)" \
-    "Результат последнего теста" \
-    "← Назад") || return
+    "Health (brief)" \
+    "All attributes" \
+    "Run short test (~2 minutes)" \
+    "Last test result" \
+    "<- Back") || return
   case "$act" in
-    "Здоровье"*)
+    "Health"*)
       {
         $SUDO smartctl -H -i "$dev"
-        printf '\n# Ключевые атрибуты (плохо, если ненулевые: Reallocated, Pending, Uncorrectable)\n'
+        printf '\n# Key attributes (bad if non-zero: Reallocated, Pending, Uncorrectable)\n'
         $SUDO smartctl -A "$dev" 2>/dev/null | grep -Ei 'reallocated|pending|uncorrect|power_on|temperature'
       } 2>&1 | page ;;
-    "Все атрибуты")
+    "All attributes")
       $SUDO smartctl -A "$dev" 2>&1 | page ;;
-    "Запустить короткий"*)
+    "Run short"*)
       $SUDO smartctl -t short "$dev" >/dev/tty 2>&1
-      ui_msg "Тест запущен в фоне. Через пару минут смотри «Результат последнего теста»." ;;
-    "Результат"*)
+      ui_msg "Test started in the background. In a couple of minutes check 'Last test result'." ;;
+    "Last test"*)
       $SUDO smartctl -l selftest "$dev" 2>&1 | page ;;
     *) return ;;
   esac
@@ -1642,21 +1642,21 @@ dsk_mount() {
   while IFS= read -r line; do
     [ -n "$line" ] && list+=("$line")
   done < <(lsblk -pn -e 7,11 -o PATH,SIZE,FSTYPE,MOUNTPOINT 2>/dev/null | awk 'NF==3')
-  [ "${#list[@]}" -gt 0 ] || { ui_msg "Нет несмонтированных разделов с файловой системой."; pause; return; }
-  sel=$(ui_menu "Какой раздел смонтировать?" "${list[@]}" "← Назад") || return
-  if [ -z "$sel" ] || [ "$sel" = "← Назад" ]; then return; fi
+  [ "${#list[@]}" -gt 0 ] || { ui_msg "No unmounted partitions with a filesystem."; pause; return; }
+  sel=$(ui_menu "Which partition to mount?" "${list[@]}" "<- Back") || return
+  if [ -z "$sel" ] || [ "$sel" = "<- Back" ]; then return; fi
   dev=${sel%% *}
   fstype=$(lsblk -dn -o FSTYPE "$dev" 2>/dev/null)
   uuid=$(lsblk -dn -o UUID "$dev" 2>/dev/null)
-  mp=$(ui_input "Точка монтирования" "/mnt/${dev##*/}")
+  mp=$(ui_input "Mount point" "/mnt/${dev##*/}")
   [ -n "$mp" ] || return
   $SUDO mkdir -p "$mp"
   if ! $SUDO mount "$dev" "$mp" >/dev/tty 2>&1; then
-    ui_msg "Не смонтировалось (файловая система: ${fstype:-неизвестна})."
+    ui_msg "Mount failed (filesystem: ${fstype:-unknown})."
     pause; return
   fi
-  ui_msg "Смонтировано: $dev -> $mp"
-  ui_yesno "Прописать в /etc/fstab (монтировать при загрузке)?" || { pause; return; }
+  ui_msg "Mounted: $dev -> $mp"
+  ui_yesno "Add to /etc/fstab (mount at boot)?" || { pause; return; }
   $SUDO cp -a /etc/fstab /etc/fstab.hh.bak
   if [ -n "$uuid" ]; then
     printf 'UUID=%s %s %s defaults,nofail 0 2\n' "$uuid" "$mp" "${fstype:-auto}" | $SUDO tee -a /etc/fstab >/dev/null
@@ -1664,10 +1664,10 @@ dsk_mount() {
     printf '%s %s %s defaults,nofail 0 2\n' "$dev" "$mp" "${fstype:-auto}" | $SUDO tee -a /etc/fstab >/dev/null
   fi
   if $SUDO mount -a >/dev/tty 2>&1; then
-    ui_msg "Записано в /etc/fstab с флагом nofail — сервер загрузится, даже если диск отвалится." \
-           "Бэкап прежнего файла: /etc/fstab.hh.bak"
+    ui_msg "Written to /etc/fstab with the nofail flag - the server boots even if the disk is missing." \
+           "Backup of the old file: /etc/fstab.hh.bak"
   else
-    ui_msg "Ошибка в /etc/fstab — откатываю из бэкапа, чтобы сервер не завис при загрузке."
+    ui_msg "Error in /etc/fstab - rolling back from backup so the server does not hang at boot."
     $SUDO cp -a /etc/fstab.hh.bak /etc/fstab
   fi
   pause
@@ -1679,14 +1679,14 @@ dsk_umount() {
     [ -n "$line" ] && list+=("$line")
   done < <(lsblk -pn -e 7,11 -o PATH,SIZE,FSTYPE,MOUNTPOINT 2>/dev/null \
            | awk 'NF==4 && $4 != "/" && $4 != "[SWAP]" && $4 !~ /^\/boot/')
-  [ "${#list[@]}" -gt 0 ] || { ui_msg "Нечего отмонтировать (системные разделы не трогаю)."; pause; return; }
-  sel=$(ui_menu "Что отмонтировать?" "${list[@]}" "← Назад") || return
-  if [ -z "$sel" ] || [ "$sel" = "← Назад" ]; then return; fi
+  [ "${#list[@]}" -gt 0 ] || { ui_msg "Nothing to unmount (I don't touch system partitions)."; pause; return; }
+  sel=$(ui_menu "What to unmount?" "${list[@]}" "<- Back") || return
+  if [ -z "$sel" ] || [ "$sel" = "<- Back" ]; then return; fi
   mp=$(printf '%s' "$sel" | awk '{print $4}')
   if $SUDO umount "$mp" 2>/dev/tty; then
-    ui_msg "Отмонтировано: $mp" "Если раздел прописан в /etc/fstab — при перезагрузке смонтируется снова."
+    ui_msg "Unmounted: $mp" "If the partition is in /etc/fstab - it will mount again on reboot."
   else
-    ui_msg "Раздел занят. Кто его держит:"
+    ui_msg "Partition is busy. Who holds it:"
     $SUDO fuser -vm "$mp" >/dev/tty 2>&1 || $SUDO lsof +D "$mp" 2>/dev/null | head -n 10 >/dev/tty
   fi
   pause
@@ -1698,51 +1698,51 @@ dsk_format() {
   root=$(findmnt -no SOURCE / 2>/dev/null)
   sysdisk=$(lsblk -no PKNAME "$root" 2>/dev/null | head -n 1)
   {
-    printf '\n# Диски (системный: %s)\n' "${sysdisk:-неизвестен}"
+    printf '\n# Disks (system disk: %s)\n' "${sysdisk:-unknown}"
     lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT,MODEL 2>/dev/null
   } >/dev/tty
-  ui_msg "ОПАСНО: диск будет размечен заново (GPT + один раздел ext4)." \
-         "ВСЕ ДАННЫЕ НА НЁМ БУДУТ УНИЧТОЖЕНЫ БЕЗВОЗВРАТНО."
-  dev=$(ui_input "Устройство целиком (например /dev/sdb)" "")
+  ui_msg "DANGER: the disk will be re-partitioned (GPT + one ext4 partition)." \
+         "ALL DATA ON IT WILL BE DESTROYED PERMANENTLY."
+  dev=$(ui_input "Whole device (e.g. /dev/sdb)" "")
   [ -n "$dev" ] || return
-  [ -b "$dev" ] || { ui_msg "$dev — не блочное устройство."; pause; return; }
+  [ -b "$dev" ] || { ui_msg "$dev is not a block device."; pause; return; }
   if [ "$(lsblk -dn -o TYPE "$dev" 2>/dev/null)" != "disk" ]; then
-    ui_msg "Нужен диск целиком, а не раздел."; pause; return
+    ui_msg "I need a whole disk, not a partition."; pause; return
   fi
   if [ -n "$sysdisk" ] && [ "$dev" = "/dev/$sysdisk" ]; then
-    ui_msg "Это системный диск ($dev) — отказываюсь форматировать."; pause; return
+    ui_msg "This is the system disk ($dev) - refusing to format."; pause; return
   fi
   if lsblk -n -o MOUNTPOINT "$dev" 2>/dev/null | grep -q '[^[:space:]]'; then
-    ui_msg "На $dev есть смонтированные разделы — сначала отмонтируй их."; pause; return
+    ui_msg "$dev has mounted partitions - unmount them first."; pause; return
   fi
-  conf=$(ui_input "Для подтверждения впиши ТОЧНО: $dev" "")
-  [ "$conf" = "$dev" ] || { ui_msg "Не совпало — отмена."; pause; return; }
-  label=$(ui_input "Метка тома (латиницей)" "data")
-  ui_msg "Размечаю $dev ..."
+  conf=$(ui_input "To confirm, type EXACTLY: $dev" "")
+  [ "$conf" = "$dev" ] || { ui_msg "Mismatch - cancelled."; pause; return; }
+  label=$(ui_input "Volume label (Latin letters)" "data")
+  ui_msg "Partitioning $dev ..."
   $SUDO wipefs -a "$dev" >/dev/null 2>&1
   $SUDO parted -s "$dev" mklabel gpt mkpart primary ext4 1MiB 100% >/dev/tty 2>&1
   $SUDO partprobe "$dev" 2>/dev/null
   sleep 2
   part=$(lsblk -pn -o PATH,TYPE "$dev" 2>/dev/null | awk '$2=="part"{print $1; exit}')
-  [ -n "$part" ] || { ui_msg "Раздел не появился — проверь вручную (lsblk)."; pause; return; }
+  [ -n "$part" ] || { ui_msg "Partition did not appear - check manually (lsblk)."; pause; return; }
   $SUDO mkfs.ext4 -F -L "$label" "$part" >/dev/tty 2>&1
-  ui_msg "Готово: $part (ext4, метка $label)." \
-         "Теперь смонтируй его пунктом «Смонтировать раздел»."
+  ui_msg "Done: $part (ext4, label $label)." \
+         "Now mount it via 'Mount a partition'."
   pause
 }
 
 dsk_space() {
   local d
-  d=$(ui_input "Каталог для анализа" "/")
+  d=$(ui_input "Directory to analyze" "/")
   [ -n "$d" ] || return
-  if command -v ncdu >/dev/null 2>&1 && ui_yesno "Открыть интерактивный ncdu по $d?"; then
+  if command -v ncdu >/dev/null 2>&1 && ui_yesno "Open interactive ncdu on $d?"; then
     $SUDO ncdu "$d" </dev/tty >/dev/tty 2>&1
     pause; return
   fi
   {
-    printf '\n# Топ-20 каталогов в %s\n' "$d"
+    printf '\n# Top 20 directories in %s\n' "$d"
     $SUDO du -h --max-depth=1 "$d" 2>/dev/null | sort -hr | head -n 20
-    printf '\n# Топ-10 крупных файлов (без учёта других ФС)\n'
+    printf '\n# Top 10 large files (same filesystem only)\n'
     $SUDO find "$d" -xdev -type f -printf '%s %p\n' 2>/dev/null \
       | sort -nr | head -n 10 \
       | awk '{sz=$1; $1=""; sub(/^ /,""); printf "%8.1f MB  %s\n", sz/1048576, $0}'
@@ -1753,18 +1753,18 @@ dsk_space() {
 dsk_samba() {
   ensure_pkg samba || { pause; return; }
   local dir name mode user host
-  dir=$(ui_input "Какую папку раздать" "/srv/share"); [ -n "$dir" ] || return
-  name=$(ui_input "Имя шары (так её увидит Windows)" "$(basename "$dir")"); [ -n "$name" ] || return
-  mode=$(ui_menu "Доступ" \
-    "По логину и паролю (чтение и запись)" \
-    "Гостевой, только чтение" \
-    "← Отмена") || return
+  dir=$(ui_input "Which folder to share" "/srv/share"); [ -n "$dir" ] || return
+  name=$(ui_input "Share name (how Windows will see it)" "$(basename "$dir")"); [ -n "$name" ] || return
+  mode=$(ui_menu "Access" \
+    "By login & password (read-write)" \
+    "Guest, read-only" \
+    "<- Cancel") || return
   $SUDO mkdir -p "$dir"
   case "$mode" in
-    "По логину"*)
-      user=$(ui_input "Пользователь (должен существовать в системе)" "$USER"); [ -n "$user" ] || return
+    "By login"*)
+      user=$(ui_input "User (must exist in the system)" "$USER"); [ -n "$user" ] || return
       if ! id "$user" >/dev/null 2>&1; then
-        ui_msg "Нет системного пользователя $user — создай его в разделе «Пользователи и доступ»."
+        ui_msg "No system user $user - create it under 'Users & access'."
         pause; return
       fi
       $SUDO chown -R "$user:$user" "$dir"
@@ -1779,11 +1779,11 @@ dsk_samba() {
    create mask = 0664
    directory mask = 0775
 CONF
-      ui_msg "Задай пароль Samba для $user (он отдельный от системного):"
+      ui_msg "Set a Samba password for $user (separate from the system one):"
       $SUDO smbpasswd -a "$user" </dev/tty
       $SUDO smbpasswd -e "$user" >/dev/null 2>&1
       ;;
-    "Гостевой"*)
+    "Guest"*)
       $SUDO chmod 755 "$dir"
       $SUDO tee -a /etc/samba/smb.conf >/dev/null <<CONF
 
@@ -1797,26 +1797,26 @@ CONF
     *) return ;;
   esac
   if ! $SUDO testparm -s >/dev/null 2>&1; then
-    ui_msg "ВНИМАНИЕ: testparm ругается на /etc/samba/smb.conf — проверь конфиг."
+    ui_msg "WARNING: testparm complains about /etc/samba/smb.conf - check the config."
   fi
   $SUDO systemctl restart smbd 2>/dev/null || $SUDO systemctl restart samba 2>/dev/null
   command -v ufw >/dev/null 2>&1 && $SUDO ufw allow samba >/dev/null 2>&1
   host=$(hostname -I 2>/dev/null | awk '{print $1}')
-  ui_msg "Шара готова. В проводнике Windows:  \\\\${host:-IP-сервера}\\${name}" "Каталог: $dir"
+  ui_msg "Share is ready. In Windows Explorer:  \\\\${host:-server-IP}\\${name}" "Directory: $dir"
   pause
 }
 
 dsk_nfs() {
   ensure_pkg nfs-kernel-server || { pause; return; }
   local dir net mode opts host defnet
-  dir=$(ui_input "Какую папку экспортировать" "/srv/nfs"); [ -n "$dir" ] || return
-  # ponytail: подсеть угадываю заменой последнего октета на 0 — верно для /24, для других масок правь руками
+  dir=$(ui_input "Which folder to export" "/srv/nfs"); [ -n "$dir" ] || return
+  # ponytail: guessing the subnet by zeroing the last octet - correct for /24, edit by hand for other masks
   defnet=$(default_cidr | sed 's/\.[0-9]\{1,3\}\//.0\//')
-  net=$(ui_input "Кому разрешить (IP или подсеть)" "$defnet"); [ -n "$net" ] || return
-  mode=$(ui_menu "Доступ" "Чтение и запись" "Только чтение" "← Отмена") || return
+  net=$(ui_input "Who to allow (IP or subnet)" "$defnet"); [ -n "$net" ] || return
+  mode=$(ui_menu "Access" "Read-write" "Read-only" "<- Cancel") || return
   case "$mode" in
-    "Чтение и запись") opts="rw,sync,no_subtree_check" ;;
-    "Только чтение")   opts="ro,sync,no_subtree_check" ;;
+    "Read-write") opts="rw,sync,no_subtree_check" ;;
+    "Read-only")   opts="ro,sync,no_subtree_check" ;;
     *) return ;;
   esac
   $SUDO mkdir -p "$dir"
@@ -1826,12 +1826,12 @@ dsk_nfs() {
   command -v ufw >/dev/null 2>&1 && $SUDO ufw allow nfs >/dev/null 2>&1
   $SUDO exportfs -v 2>&1 | page
   host=$(hostname -I 2>/dev/null | awk '{print $1}')
-  ui_msg "Экспорт готов. На клиенте:" "sudo mount -t nfs ${host:-IP-сервера}:$dir /mnt/точка"
+  ui_msg "Export is ready. On the client:" "sudo mount -t nfs ${host:-server-IP}:$dir /mnt/mountpoint"
   pause
 }
 
 # ===========================================================================
-# ГЛАВНЫЙ ЦИКЛ
+# MAIN LOOP
 # ===========================================================================
 
 main() {
@@ -1839,48 +1839,48 @@ main() {
   require_tty
   require_apt
   init_sudo
-  log "=== старт HH Toolbox Linux v$VERSION (пользователь $(id -un)) ==="
+  log "=== start HH Toolbox Linux v$VERSION (user $(id -un)) ==="
   ensure_ui
   banner
   local pick
   while :; do
-    pick=$(ui_menu "Главное меню — $(hostname)" \
-      "Информация о системе" \
-      "Информация о сети" \
-      "Установка программ (галочки)" \
-      "Твики и настройка сервера" \
-      "Службы и процессы" \
-      "Диски и хранилище" \
-      "Диагностика сети" \
-      "Docker и сервисы" \
+    pick=$(ui_menu "Main menu - $(hostname)" \
+      "System info" \
+      "Network info" \
+      "Install packages (checkboxes)" \
+      "Server tweaks & hardening" \
+      "Services & processes" \
+      "Disks & storage" \
+      "Network diagnostics" \
+      "Docker & services" \
       "WireGuard VPN" \
-      "Пользователи и доступ" \
-      "Сеть и веб" \
-      "Обслуживание и мониторинг" \
-      "Справочник команд" \
-      "Выход") || break
-    [ -n "$pick" ] && [ "$pick" != "Выход" ] && log "раздел: $pick"
+      "Users & access" \
+      "Network & web" \
+      "Maintenance & monitoring" \
+      "Command reference" \
+      "Exit") || break
+    [ -n "$pick" ] && [ "$pick" != "Exit" ] && log "section: $pick"
     case "$pick" in
-      "Информация о системе")         sec_sysinfo ;;
-      "Информация о сети")            sec_netinfo ;;
-      "Установка программ (галочки)") sec_install ;;
-      "Твики и настройка сервера")    sec_tweaks ;;
-      "Службы и процессы")            sec_services ;;
-      "Диски и хранилище")            sec_disks ;;
-      "Диагностика сети")             sec_netdiag ;;
-      "Docker и сервисы")             sec_docker ;;
+      "System info")         sec_sysinfo ;;
+      "Network info")            sec_netinfo ;;
+      "Install packages (checkboxes)") sec_install ;;
+      "Server tweaks & hardening")    sec_tweaks ;;
+      "Services & processes")            sec_services ;;
+      "Disks & storage")            sec_disks ;;
+      "Network diagnostics")             sec_netdiag ;;
+      "Docker & services")             sec_docker ;;
       "WireGuard VPN")                sec_wireguard ;;
-      "Пользователи и доступ")        sec_users ;;
-      "Сеть и веб")                   sec_netweb ;;
-      "Обслуживание и мониторинг")    sec_maint ;;
-      "Справочник команд")            sec_commands ;;
-      "Выход"|"") break ;;
+      "Users & access")        sec_users ;;
+      "Network & web")                   sec_netweb ;;
+      "Maintenance & monitoring")    sec_maint ;;
+      "Command reference")            sec_commands ;;
+      "Exit"|"") break ;;
     esac
   done
-  printf 'Пока!\n' >/dev/tty
+  printf 'Bye!\n' >/dev/tty
 }
 
-# HH_NORUN=1 — только загрузить функции/данные (для тестов), не показывать меню
+# HH_NORUN=1 - only load functions/data (for tests), do not show the menu
 if [ -z "${HH_NORUN:-}" ]; then
   main "$@"
 fi
