@@ -73,6 +73,8 @@ $Programs = @(
     @{ Name = 'SADP (Hikvision)';     Download = 'https://files.dg-solutions.am/HHScript/SADP.exe'; File = 'SADP.exe' }
     @{ Name = 'HiTools Delivery (Hikvision)'; Download = 'https://files.dg-solutions.am/HHScript/HiToolsDeliverySetup_EN.exe'; File = 'HiToolsDeliverySetup_EN.exe' }
     @{ Name = 'iVMS-4200 (Hikvision)'; Download = 'https://files.dg-solutions.am/HHScript/iVMS-4200V3.14.1.3_E.exe'; File = 'iVMS-4200V3.14.1.3_E.exe' }
+    @{ Name = 'Genform'; Download = 'https://files.dg-solutions.am/HHScript/Genform.exe'; File = 'Genform.exe' }
+    @{ Name = 'ControlConfig (2025.12.03)'; Download = 'https://files.dg-solutions.am/HHScript/ControlConfig2025.12.03.rar'; File = 'ControlConfig2025.12.03.rar' }
     # --- CCTV — прочие вендоры (winget / страница загрузки) ---
     @{ Group = 'CCTV — прочие вендоры'; Name = 'ONVIF Device Manager (универсальный)'; Download = 'https://downloads.sourceforge.net/project/onvifdm/odm-v2.2.250r.msi'; File = 'odm-v2.2.250r.msi'; Url = 'https://sourceforge.net/projects/onvifdm/' }
     @{ Name = 'Reolink Client';       Winget = 'Reolink.Reolink';                 Url = 'https://reolink.com/software-and-manual/' }
@@ -98,10 +100,10 @@ $Programs = @(
     @{ Name = 'WinMerge (сравнение)'; Winget = 'WinMerge.WinMerge';               Url = 'https://winmerge.org/downloads/' }
     @{ Name = 'Bitwarden (пароли)';   Winget = 'Bitwarden.Bitwarden';             Url = 'https://bitwarden.com/download/' }
     # --- Офис / документы (авто-загрузка с Я.Диска) ---
-    @{ Group = 'Офис / документы'; Name = 'ABBYY FineReader PDF 16'; Yadisk = 'https://disk.yandex.ru/d/6ANLBOXkPqeqrw' }
-    @{ Name = 'Adobe Acrobat Pro DC 2022'; Yadisk = 'https://disk.yandex.ru/d/N3nz_ic4YdvPSQ' }
-    @{ Name = 'Adobe InDesign 2022';       Yadisk = 'https://disk.yandex.ru/d/eHwWiyfCtmTt-g' }
-    @{ Name = 'WinRAR 5.50 (RU)';          Yadisk = 'https://disk.yandex.ru/d/p8ljN-9lJhWEVw' }
+    @{ Group = 'Офис / документы'; Name = 'ABBYY FineReader PDF 16'; Download = 'https://files.dg-solutions.am/HHScript/ABBYY.FineReader.PDF.16.v16.0.14.7295-full.exe' }
+    @{ Name = 'Adobe Acrobat Pro DC 2022'; Download = 'https://files.dg-solutions.am/HHScript/Adobe.Acrobat.Pro.DC.2022.x64.Multilingual.iso' }
+    @{ Name = 'Adobe InDesign 2022';       Download = 'https://files.dg-solutions.am/HHScript/Adobe.InDesign.2022.u1.Multilingual.iso' }
+    @{ Name = 'WinRAR 5.50 (RU)';          Download = 'https://files.dg-solutions.am/HHScript/WinRAR%205.50%20x64%20RU.exe' }
     # --- Раскладки клавиатуры (MSKLC, фонетические, из репозитория) ---
     @{ Group = 'Раскладки клавиатуры'; Name = 'Русская фонетическая раскладка';  Layout = 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/layouts/RussianPhonetic.zip' }
     @{ Name = 'Армянская фонетическая раскладка'; Layout = 'https://raw.githubusercontent.com/TheRainOfSoul/hhscript/main/layouts/ArmenianPhonetic.zip' }
