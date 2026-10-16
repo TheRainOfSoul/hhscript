@@ -634,6 +634,214 @@ function Show-PCInfo {
     }
 }
 
+# =====================================================================
+#  История IP-адресов ПК: текущие адреса (v4/v6, статик/DHCP), аренды
+#  DHCP со временем (из реестра), таймлайн из журналов событий
+#  (IP + время + источник), внешний IP. Весь вывод кладём в буфер обмена.
+#  ВАЖНО: Windows не ведёт единый журнал всех IP — собираем максимум из
+#  доступного; ручная смена статического IP обычно НЕ логируется.
+# =====================================================================
+function Show-IpHistory {
+    Write-Box 'История IP-адресов' 'Green'
+    Write-Host "   Собираю данные (журналы — несколько секунд)..." -ForegroundColor DarkGray
+
+    $out  = New-Object System.Collections.Generic.List[string]
+    $line = {
+        param([string]$Text = '', [string]$Color = 'Gray')
+        Write-Host $Text -ForegroundColor $Color
+        $out.Add($Text)
+    }
+
+    # Вытащить валидные IPv4/IPv6 из произвольного текста (TryParse отсекает мусор).
+    $grabIPs = {
+        param([string]$Text)
+        $res = New-Object System.Collections.Generic.List[string]
+        if (-not $Text) { return $res }
+        $ref = $null
+        foreach ($m in [regex]::Matches($Text, '\b\d{1,3}(?:\.\d{1,3}){3}\b')) {
+            if ([System.Net.IPAddress]::TryParse($m.Value, [ref]$ref) -and "$($ref.AddressFamily)" -eq 'InterNetwork') {
+                if ($m.Value -ne '0.0.0.0' -and $m.Value -ne '255.255.255.255') { [void]$res.Add($m.Value) }
+            }
+        }
+        foreach ($m in [regex]::Matches($Text, '(?:[0-9A-Fa-f]{1,4}:){2,}[0-9A-Fa-f]{1,4}|[0-9A-Fa-f:]*::[0-9A-Fa-f:]*')) {
+            if ([System.Net.IPAddress]::TryParse($m.Value, [ref]$ref) -and "$($ref.AddressFamily)" -eq 'InterNetworkV6') {
+                $s = $ref.IPAddressToString
+                if ($s -ne '::' -and $s -ne '::1') { [void]$res.Add($s) }
+            }
+        }
+        return ($res | Select-Object -Unique)
+    }
+
+    & $line ("  HH Toolbox — история IP  |  $env:COMPUTERNAME  |  " + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')) 'Cyan'
+
+    # === 1) Текущие адреса ===
+    & $line ''
+    & $line '  === Текущие IP-адреса ===' 'Green'
+    $ads = @(Get-NetIPAddress -ErrorAction SilentlyContinue | Sort-Object InterfaceAlias, AddressFamily, IPAddress)
+    if ($ads.Count) {
+        foreach ($a in $ads) {
+            $origin = switch ("$($a.PrefixOrigin)") {
+                'Manual'              { 'статический' }
+                'Dhcp'                { 'DHCP' }
+                'WellKnown'           { 'системный' }
+                'RouterAdvertisement' { 'авто (RA)' }
+                default               { "$($a.PrefixOrigin)" }
+            }
+            & $line ("   {0,-18} {1,-5} {2}/{3}  [{4}]  {5}" -f $a.InterfaceAlias, "$($a.AddressFamily)", $a.IPAddress, $a.PrefixLength, $origin, "$($a.AddressState)")
+        }
+    } else { & $line '   (Get-NetIPAddress недоступен — старая ОС?)' 'Yellow' }
+
+    # Шлюз/DNS/MAC по адаптерам
+    & $line ''
+    & $line '  === Адаптеры (MAC / шлюз / DNS) ===' 'Green'
+    foreach ($cfg in @(Get-NetIPConfiguration -ErrorAction SilentlyContinue)) {
+        $mac = (Get-NetAdapter -InterfaceIndex $cfg.InterfaceIndex -ErrorAction SilentlyContinue | Select-Object -First 1).MacAddress
+        if (-not $mac) { $mac = '—' }
+        & $line ("   {0}  MAC {1}" -f $cfg.InterfaceAlias, $mac) 'White'
+        if ($cfg.IPv4DefaultGateway) { & $line ("      шлюз v4: {0}" -f (($cfg.IPv4DefaultGateway.NextHop) -join ', ')) }
+        if ($cfg.IPv6DefaultGateway) { & $line ("      шлюз v6: {0}" -f (($cfg.IPv6DefaultGateway.NextHop) -join ', ')) }
+        if ($cfg.DNSServer)          { & $line ("      DNS:     {0}" -f (($cfg.DNSServer.ServerAddresses) -join ', ')) }
+    }
+
+    # === 2) Аренды DHCP из реестра (IPv4) со временем ===
+    & $line ''
+    & $line '  === Аренды DHCP (реестр, со временем) ===' 'Green'
+    $toTime = {
+        param($v)
+        try { if ($v -and [int64]$v -gt 0) { return [DateTimeOffset]::FromUnixTimeSeconds([int64]$v).LocalDateTime.ToString('yyyy-MM-dd HH:mm:ss') } } catch { $null = $_ }
+        return '—'
+    }
+    $anyLease = $false
+    foreach ($if in @(Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces' -ErrorAction SilentlyContinue)) {
+        $p = Get-ItemProperty $if.PSPath -ErrorAction SilentlyContinue
+        $dip = "$($p.DhcpIPAddress)"
+        if ($dip -and $dip -ne '0.0.0.0') {
+            $anyLease = $true
+            $alias = (Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceGuid -eq $if.PSChildName } | Select-Object -First 1).Name
+            if (-not $alias) { $alias = $if.PSChildName }
+            & $line ("   {0}" -f $alias) 'White'
+            & $line ("      IP:        {0}" -f $dip)
+            if ($p.DhcpServer)         { & $line ("      DHCP:      {0}" -f $p.DhcpServer) }
+            if ($p.DhcpDefaultGateway) { & $line ("      шлюз:      {0}" -f (($p.DhcpDefaultGateway) -join ', ')) }
+            if ($p.DhcpSubnetMask)     { & $line ("      маска:     {0}" -f $p.DhcpSubnetMask) }
+            if ($p.DhcpNameServer)     { & $line ("      DNS:       {0}" -f $p.DhcpNameServer) }
+            & $line ("      получена:  {0}" -f (& $toTime $p.LeaseObtainedTime))
+            & $line ("      до:        {0}" -f (& $toTime $p.LeaseTerminatesTime))
+        }
+    }
+    if (-not $anyLease) { & $line '   (активных DHCP-аренд нет — вероятно статический IP)' 'DarkGray' }
+
+    # === 3) Таймлайн из журналов событий ===
+    & $line ''
+    & $line '  === История из журналов событий ===' 'Green'
+    $events  = New-Object System.Collections.Generic.List[object]
+    $missing = New-Object System.Collections.Generic.List[string]
+    $channels = @(
+        'Microsoft-Windows-Dhcp-Client/Admin',
+        'Microsoft-Windows-Dhcp-Client/Operational',
+        'Microsoft-Windows-Dhcpv6-Client/Admin',
+        'Microsoft-Windows-Dhcpv6-Client/Operational',
+        'Microsoft-Windows-NetworkProfile/Operational'
+    )
+    foreach ($ch in $channels) {
+        try {
+            foreach ($e in @(Get-WinEvent -FilterHashtable @{ LogName = $ch } -MaxEvents 500 -ErrorAction Stop)) {
+                $ips = & $grabIPs $e.Message
+                $isProf = ($ch -like '*NetworkProfile*')
+                if (($ips -and @($ips).Count) -or $isProf) {
+                    $first = (("$($e.Message)" -split "`r?`n") | Where-Object { $_ } | Select-Object -First 1)
+                    [void]$events.Add([pscustomobject]@{
+                        Time = $e.TimeCreated; Src = ($ch -replace '^Microsoft-Windows-', '' -replace '/.*$', '')
+                        Ip = (@($ips) -join ', '); Msg = "$first"
+                    })
+                }
+            }
+        } catch { [void]$missing.Add(($ch -replace '^Microsoft-Windows-', '')) }
+    }
+    # System: конфликты IP и прочие события Tcpip (содержат адрес)
+    try {
+        foreach ($e in @(Get-WinEvent -FilterHashtable @{ LogName = 'System'; ProviderName = @('Tcpip', 'Tcpip6', 'Microsoft-Windows-Tcpip', 'Dhcp') } -MaxEvents 500 -ErrorAction Stop)) {
+            $ips = & $grabIPs $e.Message
+            if ($ips -and @($ips).Count) {
+                $first = (("$($e.Message)" -split "`r?`n") | Where-Object { $_ } | Select-Object -First 1)
+                [void]$events.Add([pscustomobject]@{ Time = $e.TimeCreated; Src = 'Tcpip/System'; Ip = (@($ips) -join ', '); Msg = "$first" })
+            }
+        }
+    } catch { [void]$missing.Add('System/Tcpip') }
+
+    if ($events.Count) {
+        $rows = @($events |
+            Sort-Object Time -Unique |
+            Sort-Object Time)
+        $shown = $rows
+        if ($rows.Count -gt 400) {
+            & $line ("   (записей {0}, показываю последние 400)" -f $rows.Count) 'DarkGray'
+            $shown = $rows[-400..-1]
+        }
+        foreach ($r in $shown) {
+            $t = $r.Time.ToString('yyyy-MM-dd HH:mm:ss')
+            if ($r.Ip) {
+                & $line ("   {0}  [{1}]  IP: {2}" -f $t, $r.Src, $r.Ip) 'White'
+            } else {
+                $m = $r.Msg; if ($m.Length -gt 70) { $m = $m.Substring(0, 70) }
+                & $line ("   {0}  [{1}]  {2}" -f $t, $r.Src, $m) 'DarkGray'
+            }
+        }
+    } else {
+        & $line '   (в журналах не найдено событий с IP — возможно, они пусты/затёрты)' 'DarkGray'
+    }
+
+    # === 4) Сети, к которым ПК подключался (NetworkList, с датами) ===
+    & $line ''
+    & $line '  === Сети, к которым подключался ПК (с датами) ===' 'Green'
+    $sysTime = {
+        param($b)
+        try {
+            if ($b -and $b.Length -ge 16) {
+                $yy = [BitConverter]::ToUInt16($b, 0);  $mo = [BitConverter]::ToUInt16($b, 2)
+                $dd = [BitConverter]::ToUInt16($b, 6);  $hh = [BitConverter]::ToUInt16($b, 8)
+                $mi = [BitConverter]::ToUInt16($b, 10); $ss = [BitConverter]::ToUInt16($b, 12)
+                return ('{0:0000}-{1:00}-{2:00} {3:00}:{4:00}:{5:00}' -f $yy, $mo, $dd, $hh, $mi, $ss)
+            }
+        } catch { $null = $_ }
+        return '—'
+    }
+    $anyNet = $false
+    foreach ($pr in @(Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\NetworkList\Profiles' -ErrorAction SilentlyContinue)) {
+        $pp = Get-ItemProperty $pr.PSPath -ErrorAction SilentlyContinue
+        if ($pp -and $pp.ProfileName) {
+            $anyNet = $true
+            & $line ("   {0}" -f $pp.ProfileName) 'White'
+            & $line ("      впервые:   {0}" -f (& $sysTime $pp.DateCreated))
+            & $line ("      последний: {0}" -f (& $sysTime $pp.DateLastConnected))
+        }
+    }
+    if (-not $anyNet) { & $line '   (список сетей недоступен — нужны права администратора)' 'DarkGray' }
+
+    # Внешний IP (текущий)
+    & $line ''
+    $pub = ''
+    try { $pub = "$(Invoke-RestMethod 'https://api.ipify.org' -TimeoutSec 5 -ErrorAction Stop)" } catch { $null = $_ }
+    if ($pub) { & $line ("  Внешний IP сейчас: {0}" -f $pub) 'Green' }
+
+    # Примечание о полноте
+    & $line ''
+    & $line '  === О полноте ===' 'DarkGray'
+    & $line '   Единого журнала всех IP в Windows нет. Выше — максимум из доступного:'
+    & $line '   текущее состояние, аренды DHCP и события журналов. Ручная смена'
+    & $line '   статического IP обычно не логируется; старые записи журналов могли'
+    & $line '   быть затёрты ротацией.'
+    if ($missing.Count) { & $line ("   Недоступны/пусты: " + (($missing | Select-Object -Unique) -join ', ')) 'DarkGray' }
+
+    # В буфер обмена
+    $text = ($out -join "`r`n")
+    $copied = $false
+    try { Set-Clipboard -Value $text -ErrorAction Stop; $copied = $true }
+    catch { try { $text | clip.exe; $copied = $true } catch { $null = $_ } }
+    if ($copied) { Write-Host "`n  [OK] Скопировано в буфер обмена ($($out.Count) строк) — вставь куда нужно (Ctrl+V)." -ForegroundColor Green }
+    else { Write-Host "`n  Не удалось скопировать в буфер — выдели и скопируй вручную." -ForegroundColor Yellow }
+}
+
 # Скачать (если нужно), распаковать и запустить Glow — портейбл-анализатор ПК.
 # Отчёт сохраняется ИЗ интерфейса Glow (HTML / TXT / Markdown); CLI-экспорта у
 # него нет, поэтому автоматически html-файл не создаём — Glow это делает кнопкой.
@@ -2407,6 +2615,7 @@ Write-Host ''; Write-Host 'Готово. Окно можно закрыть.' -F
 $Menu = @(
     @{ Section = 'Диагностика и сеть' }
     @{ Label = 'Информация о ПК';                                 Action = { Show-PCInfo; Wait-Continue } }
+    @{ Label = 'История IP-адресов ПК (копия в буфер)';           Action = { Show-IpHistory; Wait-Continue }; Admin = $true }
     @{ Label = 'Анализ ПК — Glow (сохранение в HTML)';            Action = { Invoke-Glow; Wait-Continue } }
     @{ Label = 'Сетевые утилиты (DNS, ping, сброс сети)';         Action = { Show-NetworkMenu } }
     @{ Label = 'Network Doctor (диагностика проблем сети)';       Action = { Invoke-NetworkDoctor; Wait-Continue } }
