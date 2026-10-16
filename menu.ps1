@@ -666,11 +666,34 @@ function Show-IpHistory {
         foreach ($m in [regex]::Matches($Text, '(?:[0-9A-Fa-f]{1,4}:){2,}[0-9A-Fa-f]{1,4}|[0-9A-Fa-f:]*::[0-9A-Fa-f:]*')) {
             if ([System.Net.IPAddress]::TryParse($m.Value, [ref]$ref) -and "$($ref.AddressFamily)" -eq 'InterNetworkV6') {
                 $s = $ref.IPAddressToString
-                if ($s -ne '::' -and $s -ne '::1') { [void]$res.Add($s) }
+                # отсекаем огрызки вида ::x (фрагменты из текста событий), оставляем реальные адреса
+                if ($s -ne '::' -and $s -ne '::1' -and ($s -notmatch '^::[0-9A-Fa-f]{1,4}$')) { [void]$res.Add($s) }
             }
         }
         return ($res | Select-Object -Unique)
     }
+
+    # Копилка всех найденных IP: IP -> { First, Last, Tags } — для итоговой сводки.
+    $seen = @{}
+    $note = {
+        param([string]$Ip, $When, [string]$Tag)
+        if (-not $Ip) { return }
+        if (-not $seen.ContainsKey($Ip)) {
+            $seen[$Ip] = [pscustomobject]@{ Ip = $Ip; First = $When; Last = $When; Tags = (New-Object System.Collections.Generic.List[string]) }
+        }
+        $o = $seen[$Ip]
+        if ($When) {
+            if ((-not $o.First) -or ($When -lt $o.First)) { $o.First = $When }
+            if ((-not $o.Last) -or ($When -gt $o.Last)) { $o.Last = $When }
+        }
+        if ($Tag -and (-not $o.Tags.Contains($Tag))) { [void]$o.Tags.Add($Tag) }
+    }
+    $toDate = {
+        param($v)
+        try { if ($v -and [int64]$v -gt 0) { return [DateTimeOffset]::FromUnixTimeSeconds([int64]$v).LocalDateTime } } catch { $null = $_ }
+        return $null
+    }
+    $fmt = { param($d) if ($d) { return $d.ToString('yyyy-MM-dd HH:mm:ss') } return '—' }
 
     & $line ("  HH Toolbox — история IP  |  $env:COMPUTERNAME  |  " + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')) 'Cyan'
 
@@ -688,6 +711,7 @@ function Show-IpHistory {
                 default               { "$($a.PrefixOrigin)" }
             }
             & $line ("   {0,-18} {1,-5} {2}/{3}  [{4}]  {5}" -f $a.InterfaceAlias, "$($a.AddressFamily)", $a.IPAddress, $a.PrefixLength, $origin, "$($a.AddressState)")
+            if ("$($a.PrefixOrigin)" -eq 'Manual' -or "$($a.PrefixOrigin)" -eq 'Dhcp') { & $note "$($a.IPAddress)" $null 'текущий' }
         }
     } else { & $line '   (Get-NetIPAddress недоступен — старая ОС?)' 'Yellow' }
 
@@ -706,27 +730,29 @@ function Show-IpHistory {
     # === 2) Аренды DHCP из реестра (IPv4) со временем ===
     & $line ''
     & $line '  === Аренды DHCP (реестр, со временем) ===' 'Green'
-    $toTime = {
-        param($v)
-        try { if ($v -and [int64]$v -gt 0) { return [DateTimeOffset]::FromUnixTimeSeconds([int64]$v).LocalDateTime.ToString('yyyy-MM-dd HH:mm:ss') } } catch { $null = $_ }
-        return '—'
-    }
     $anyLease = $false
     foreach ($if in @(Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces' -ErrorAction SilentlyContinue)) {
         $p = Get-ItemProperty $if.PSPath -ErrorAction SilentlyContinue
         $dip = "$($p.DhcpIPAddress)"
         if ($dip -and $dip -ne '0.0.0.0') {
             $anyLease = $true
-            $alias = (Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceGuid -eq $if.PSChildName } | Select-Object -First 1).Name
-            if (-not $alias) { $alias = $if.PSChildName }
-            & $line ("   {0}" -f $alias) 'White'
+            $adp = Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceGuid -eq $if.PSChildName } | Select-Object -First 1
+            $obt = & $toDate $p.LeaseObtainedTime
+            if ($adp) {
+                $alias = $adp.Name; $tag = 'DHCP-аренда'
+                & $line ("   {0}" -f $alias) 'White'
+            } else {
+                $alias = $if.PSChildName; $tag = 'прошлый адаптер (отключён)'
+                & $line ("   {0}  <- ПРОШЛЫЙ адаптер (сейчас не подключён)" -f $alias) 'Yellow'
+            }
             & $line ("      IP:        {0}" -f $dip)
             if ($p.DhcpServer)         { & $line ("      DHCP:      {0}" -f $p.DhcpServer) }
             if ($p.DhcpDefaultGateway) { & $line ("      шлюз:      {0}" -f (($p.DhcpDefaultGateway) -join ', ')) }
             if ($p.DhcpSubnetMask)     { & $line ("      маска:     {0}" -f $p.DhcpSubnetMask) }
             if ($p.DhcpNameServer)     { & $line ("      DNS:       {0}" -f $p.DhcpNameServer) }
-            & $line ("      получена:  {0}" -f (& $toTime $p.LeaseObtainedTime))
-            & $line ("      до:        {0}" -f (& $toTime $p.LeaseTerminatesTime))
+            & $line ("      получена:  {0}" -f (& $fmt $obt))
+            & $line ("      до:        {0}" -f (& $fmt (& $toDate $p.LeaseTerminatesTime)))
+            & $note $dip $obt $tag
         }
     }
     if (-not $anyLease) { & $line '   (активных DHCP-аренд нет — вероятно статический IP)' 'DarkGray' }
@@ -740,55 +766,49 @@ function Show-IpHistory {
         'Microsoft-Windows-Dhcp-Client/Admin',
         'Microsoft-Windows-Dhcp-Client/Operational',
         'Microsoft-Windows-Dhcpv6-Client/Admin',
-        'Microsoft-Windows-Dhcpv6-Client/Operational',
-        'Microsoft-Windows-NetworkProfile/Operational'
+        'Microsoft-Windows-Dhcpv6-Client/Operational'
     )
     foreach ($ch in $channels) {
         try {
             foreach ($e in @(Get-WinEvent -FilterHashtable @{ LogName = $ch } -MaxEvents 500 -ErrorAction Stop)) {
                 $ips = & $grabIPs $e.Message
-                $isProf = ($ch -like '*NetworkProfile*')
-                if (($ips -and @($ips).Count) -or $isProf) {
-                    $first = (("$($e.Message)" -split "`r?`n") | Where-Object { $_ } | Select-Object -First 1)
-                    [void]$events.Add([pscustomobject]@{
-                        Time = $e.TimeCreated; Src = ($ch -replace '^Microsoft-Windows-', '' -replace '/.*$', '')
-                        Ip = (@($ips) -join ', '); Msg = "$first"
-                    })
+                if ($ips -and @($ips).Count) {
+                    $src = ($ch -replace '^Microsoft-Windows-', '' -replace '/.*$', '')
+                    foreach ($oneIp in @($ips)) {
+                        [void]$events.Add([pscustomobject]@{ Time = $e.TimeCreated; Src = $src; Ip = $oneIp })
+                        & $note $oneIp $e.TimeCreated 'журнал'
+                    }
                 }
             }
         } catch { [void]$missing.Add(($ch -replace '^Microsoft-Windows-', '')) }
     }
-    # System: конфликты IP и прочие события Tcpip (содержат адрес)
+    # System: конфликты IP и события Tcpip/Dhcp (содержат адрес)
     try {
         foreach ($e in @(Get-WinEvent -FilterHashtable @{ LogName = 'System'; ProviderName = @('Tcpip', 'Tcpip6', 'Microsoft-Windows-Tcpip', 'Dhcp') } -MaxEvents 500 -ErrorAction Stop)) {
             $ips = & $grabIPs $e.Message
             if ($ips -and @($ips).Count) {
-                $first = (("$($e.Message)" -split "`r?`n") | Where-Object { $_ } | Select-Object -First 1)
-                [void]$events.Add([pscustomobject]@{ Time = $e.TimeCreated; Src = 'Tcpip/System'; Ip = (@($ips) -join ', '); Msg = "$first" })
+                foreach ($oneIp in @($ips)) {
+                    [void]$events.Add([pscustomobject]@{ Time = $e.TimeCreated; Src = 'Tcpip/System'; Ip = $oneIp })
+                    & $note $oneIp $e.TimeCreated 'журнал'
+                }
             }
         }
     } catch { [void]$missing.Add('System/Tcpip') }
 
     if ($events.Count) {
-        $rows = @($events |
-            Sort-Object Time -Unique |
-            Sort-Object Time)
+        $rows = @($events | Sort-Object Time, Ip -Unique | Sort-Object Time)
         $shown = $rows
-        if ($rows.Count -gt 400) {
-            & $line ("   (записей {0}, показываю последние 400)" -f $rows.Count) 'DarkGray'
-            $shown = $rows[-400..-1]
+        if ($rows.Count -gt 200) {
+            & $line ("   (событий с IP: {0}, показываю последние 200)" -f $rows.Count) 'DarkGray'
+            $shown = $rows[-200..-1]
         }
         foreach ($r in $shown) {
-            $t = $r.Time.ToString('yyyy-MM-dd HH:mm:ss')
-            if ($r.Ip) {
-                & $line ("   {0}  [{1}]  IP: {2}" -f $t, $r.Src, $r.Ip) 'White'
-            } else {
-                $m = $r.Msg; if ($m.Length -gt 70) { $m = $m.Substring(0, 70) }
-                & $line ("   {0}  [{1}]  {2}" -f $t, $r.Src, $m) 'DarkGray'
-            }
+            & $line ("   {0}  [{1}]  IP: {2}" -f $r.Time.ToString('yyyy-MM-dd HH:mm:ss'), $r.Src, $r.Ip) 'White'
         }
     } else {
-        & $line '   (в журналах не найдено событий с IP — возможно, они пусты/затёрты)' 'DarkGray'
+        & $line '   (в журналах нет событий с IP — журнал DHCP-Client/Operational по' 'DarkGray'
+        & $line '    умолчанию ВЫКЛЮЧЕН, поэтому прошлые DHCP-адреса не записывались)' 'DarkGray'
+        & $line '    Включить на будущее (админ): wevtutil sl Microsoft-Windows-Dhcp-Client/Operational /e:true' 'DarkGray'
     }
 
     # === 4) Сети, к которым ПК подключался (NetworkList, с датами) ===
@@ -817,6 +837,22 @@ function Show-IpHistory {
         }
     }
     if (-not $anyNet) { & $line '   (список сетей недоступен — нужны права администратора)' 'DarkGray' }
+
+    # === СВОДКА: все найденные IP-адреса (прямой ответ: какие IP были и когда) ===
+    & $line ''
+    & $line '  ====================================================' 'Cyan'
+    & $line '  === СВОДКА: все IP, которые удалось найти, и когда ===' 'Cyan'
+    & $line '  ====================================================' 'Cyan'
+    if ($seen.Count) {
+        foreach ($o in ($seen.Values | Sort-Object -Property @{ Expression = { if ($_.First) { $_.First } else { [datetime]'9999-01-01' } } }, Ip)) {
+            $when = 'время неизвестно'
+            if ($o.First) {
+                $when = $o.First.ToString('yyyy-MM-dd HH:mm')
+                if ($o.Last -and ("$($o.Last)" -ne "$($o.First)")) { $when = $when + '  ..  ' + $o.Last.ToString('yyyy-MM-dd HH:mm') }
+            }
+            & $line ("   {0,-40}  {1,-34}  [{2}]" -f $o.Ip, $when, (($o.Tags) -join ', ')) 'White'
+        }
+    } else { & $line '   (адресов не найдено)' 'DarkGray' }
 
     # Внешний IP (текущий)
     & $line ''
