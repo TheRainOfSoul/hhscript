@@ -646,9 +646,9 @@ function Show-IpHistory {
     Write-Host "   Собираю данные (журналы — несколько секунд)..." -ForegroundColor DarkGray
 
     $out  = New-Object System.Collections.Generic.List[string]
+    # Копим строки отчёта (в терминал НЕ пишем — он неудобен; покажем отдельным окном).
     $line = {
         param([string]$Text = '', [string]$Color = 'Gray')
-        Write-Host $Text -ForegroundColor $Color
         $out.Add($Text)
     }
 
@@ -869,13 +869,65 @@ function Show-IpHistory {
     & $line '   быть затёрты ротацией.'
     if ($missing.Count) { & $line ("   Недоступны/пусты: " + (($missing | Select-Object -Unique) -join ', ')) 'DarkGray' }
 
-    # В буфер обмена
     $text = ($out -join "`r`n")
-    $copied = $false
-    try { Set-Clipboard -Value $text -ErrorAction Stop; $copied = $true }
-    catch { try { $text | clip.exe; $copied = $true } catch { $null = $_ } }
-    if ($copied) { Write-Host "`n  [OK] Скопировано в буфер обмена ($($out.Count) строк) — вставь куда нужно (Ctrl+V)." -ForegroundColor Green }
-    else { Write-Host "`n  Не удалось скопировать в буфер — выдели и скопируй вручную." -ForegroundColor Yellow }
+    # В буфер обмена
+    try { Set-Clipboard -Value $text -ErrorAction Stop } catch { try { $text | clip.exe } catch { $null = $_ } }
+
+    # Показываем отдельным окном — удобнее терминала: прокрутка, поиск, выделение,
+    # моноширинный шрифт (колонки ровные), кнопки Копировать/Сохранить/Закрыть.
+    $shown = $false
+    try {
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
+        Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+        $form = New-Object System.Windows.Forms.Form
+        $form.Text          = "История IP-адресов — $env:COMPUTERNAME"
+        $form.Size          = New-Object System.Drawing.Size(940, 680)
+        $form.StartPosition = 'CenterScreen'
+        $tb = New-Object System.Windows.Forms.TextBox
+        $tb.Multiline = $true; $tb.ReadOnly = $true; $tb.WordWrap = $false
+        $tb.ScrollBars = 'Both'; $tb.Dock = 'Fill'
+        $tb.BackColor = [System.Drawing.Color]::FromArgb(24, 24, 24)
+        $tb.ForeColor = [System.Drawing.Color]::Gainsboro
+        $tb.Font = New-Object System.Drawing.Font('Consolas', 10)
+        $tb.Text = $text
+        $tb.Select(0, 0)
+        $bar = New-Object System.Windows.Forms.FlowLayoutPanel
+        $bar.Dock = 'Bottom'; $bar.Height = 46; $bar.FlowDirection = 'RightToLeft'
+        $bar.Padding = New-Object System.Windows.Forms.Padding(8)
+        $mkBtn = { param($t) $b = New-Object System.Windows.Forms.Button; $b.Text = $t; $b.AutoSize = $true; $b.Height = 30; $b.Margin = New-Object System.Windows.Forms.Padding(6, 4, 0, 4); $b }
+        $bClose = & $mkBtn 'Закрыть'
+        $bClose.Add_Click({ $form.Close() }.GetNewClosure())
+        $bCopy = & $mkBtn 'Копировать всё'
+        $bCopy.Add_Click({ try { [System.Windows.Forms.Clipboard]::SetText($tb.Text) } catch { $null = $_ } }.GetNewClosure())
+        $bSave = & $mkBtn 'Сохранить...'
+        $bSave.Add_Click({
+                $sfd = New-Object System.Windows.Forms.SaveFileDialog
+                $sfd.Filter   = 'Текстовый файл (*.txt)|*.txt'
+                $sfd.FileName = "IP_History_$env:COMPUTERNAME.txt"
+                if ($sfd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+                    try { [IO.File]::WriteAllText($sfd.FileName, $tb.Text, [Text.UTF8Encoding]::new($true)) } catch { $null = $_ }
+                }
+            }.GetNewClosure())
+        $bar.Controls.AddRange(@($bClose, $bCopy, $bSave))
+        $form.Controls.Add($tb)
+        $form.Controls.Add($bar)
+        [void]$form.ShowDialog()
+        $form.Dispose()
+        $shown = $true
+    } catch { $null = $_ }
+
+    if (-not $shown) {
+        # Фолбэк: открыть в Блокноте
+        try {
+            $tmp = Join-Path $env:TEMP ("HH_IP_History_{0}.txt" -f (Get-Date -Format 'yyyyMMdd_HHmmss'))
+            [IO.File]::WriteAllText($tmp, $text, [Text.UTF8Encoding]::new($true))
+            Start-Process notepad.exe $tmp
+            $shown = $true
+        } catch { $null = $_ }
+    }
+
+    if ($shown) { Write-Host "`n  [OK] Отчёт показан в отдельном окне и скопирован в буфер обмена (Ctrl+V)." -ForegroundColor Green }
+    else { Write-Host "`n  Отчёт в буфере обмена (Ctrl+V):" -ForegroundColor Yellow; Write-Host $text }
 }
 
 # Скачать (если нужно), распаковать и запустить Glow — портейбл-анализатор ПК.
