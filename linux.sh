@@ -513,6 +513,7 @@ sec_netdiag() {
       "Check camera RTSP port" \
       "mtr - route with packet loss" \
       "iperf3 - bandwidth between hosts" \
+      "ethr - bandwidth, works with Windows" \
       "speedtest - internet speed" \
       "<- Back") || return
     case "$pick" in
@@ -522,6 +523,7 @@ sec_netdiag() {
       "Check camera RTSP"*) nd_rtsp ;;
       "mtr"*)        nd_mtr ;;
       "iperf3"*)     nd_iperf ;;
+      "ethr"*)       nd_ethr ;;
       "speedtest"*)  nd_speedtest ;;
       *) return ;;
     esac
@@ -676,6 +678,46 @@ nd_iperf() {
     "Client"*)
       h=$(ui_input "iperf3 server IP" ""); [ -n "$h" ] || return
       iperf3 -c "$h" 2>&1 | page ;;
+    *) return ;;
+  esac
+  pause
+}
+
+# Ethr (Microsoft): bandwidth between two machines, compatible with the Windows
+# toolbox (NOT with iperf3). Release ships a zip, amd64 only; download+unzip once
+# into the cache, then run from there. Server holds open; client runs ~10s.
+nd_ethr() {
+  local dir bin zip mode h
+  dir="$HOME/.cache/hhscript"
+  bin="$dir/ethr"
+  if [ ! -x "$bin" ]; then
+    case "$(uname -m)" in
+      x86_64|amd64) : ;;
+      *) ui_msg "Ethr release is amd64 only - not available on $(uname -m). Use iperf3 instead."; pause; return ;;
+    esac
+    ensure_pkg unzip || { pause; return; }
+    mkdir -p "$dir" || { pause; return; }
+    zip=$(mktemp) || { pause; return; }
+    ui_msg "Downloading Ethr..."
+    if ! fetch "$zip" "https://github.com/microsoft/ethr/releases/download/v1.0.0/ethr_linux.zip"; then
+      rm -f "$zip"; ui_msg "Download failed."; pause; return
+    fi
+    unzip -o -j "$zip" -d "$dir" >/dev/null 2>&1
+    rm -f "$zip"
+    chmod +x "$bin" 2>/dev/null
+  fi
+  [ -x "$bin" ] || { ui_msg "Ethr binary not found after unzip."; pause; return; }
+  mode=$(ui_menu "ethr - bandwidth between machines" \
+    "Server (wait for measurements, Ctrl+C to stop)" \
+    "Client (connect to a server IP)" \
+    "<- Back") || return
+  case "$mode" in
+    "Server"*)
+      ui_msg "ethr server running. Run a client from the other machine to this IP. Ctrl+C to stop."
+      "$bin" -s >/dev/tty 2>&1 ;;
+    "Client"*)
+      h=$(ui_input "ethr server IP" ""); [ -n "$h" ] || return
+      "$bin" -c "$h" 2>&1 | page ;;
     *) return ;;
   esac
   pause

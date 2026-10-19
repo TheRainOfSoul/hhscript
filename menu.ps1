@@ -1617,6 +1617,40 @@ function Invoke-NetworkDoctor {
     }
 }
 
+# Ethr (Microsoft) — замер пропускной способности между двумя машинами
+# (Windows↔Windows/Linux, в т.ч. ПК↔регистратор, два ПК через Wi-Fi-мост).
+# С iperf3 НЕ совместим — это отдельный инструмент. Релиз — zip (только amd64),
+# поэтому качаем+распаковываем в LOCALAPPDATA и запускаем в текущей консоли.
+# Схема: на одной машине «Сервер», на второй «Клиент» на IP сервера.
+function Invoke-Ethr {
+    $url = 'https://github.com/microsoft/ethr/releases/download/v1.0.0/ethr_windows.zip'
+    $dir = Join-Path $env:LOCALAPPDATA 'HHToolbox\Ethr'
+    $exe = Get-ChildItem $dir -Recurse -Filter 'ethr.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $exe) {
+        Write-Host "`n   Скачиваю Ethr..." -ForegroundColor Green
+        try {
+            $zip = Join-Path $env:TEMP 'ethr.zip'
+            $wc = New-Object System.Net.WebClient
+            $wc.Headers.Add('User-Agent', 'HHToolbox/1.0')
+            try { $wc.DownloadFile($url, $zip) } finally { $wc.Dispose() }
+            Expand-Archive -Path $zip -DestinationPath $dir -Force
+            Remove-Item $zip -Force -ErrorAction SilentlyContinue
+            $exe = Get-ChildItem $dir -Recurse -Filter 'ethr.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+        } catch { Write-Host "   Ошибка загрузки Ethr: $($_.Exception.Message)" -ForegroundColor Red; return }
+    }
+    if (-not $exe) { Write-Host "   Ethr не найден после распаковки (возможно, не x64)." -ForegroundColor Yellow; return }
+    Write-Host ""
+    Write-Host "   [1] " -NoNewline -ForegroundColor Green; Write-Host "Сервер — ждёт замеров (Ctrl+C — стоп)"
+    Write-Host "   [2] " -NoNewline -ForegroundColor Green; Write-Host "Клиент — замер к IP сервера (10 сек)"
+    Write-Host "   [0] " -NoNewline -ForegroundColor Red;   Write-Host "Назад"
+    Write-Host ""
+    switch ((Read-Host "  Выбор").Trim()) {
+        '1' { Write-Host "   Сервер Ethr запущен. Пусти клиента со второй машины на IP этого ПК. Ctrl+C — остановить." -ForegroundColor Cyan; & $exe.FullName -s }
+        '2' { $h = (Read-Host "   IP сервера Ethr").Trim(); if ($h) { & $exe.FullName -c $h } }
+        default { return }
+    }
+}
+
 function Show-NetworkMenu {
     do {
         Write-Box 'Сетевые утилиты' 'Cyan'
@@ -1625,11 +1659,12 @@ function Show-NetworkMenu {
         Write-Host "   [3] " -NoNewline -ForegroundColor Green; Write-Host "Ping хоста"
         Write-Host "   [4] " -NoNewline -ForegroundColor Green; Write-Host "Трассировка (tracert)"
         Write-Host "   [5] " -NoNewline -ForegroundColor Green; Write-Host "Трассировка + потери на узлах (pathping)"
-        Write-Host "   [6] " -NoNewline -ForegroundColor Green; Write-Host "DNS -> Cloudflare (1.1.1.1)        [админ]"
-        Write-Host "   [7] " -NoNewline -ForegroundColor Green; Write-Host "DNS -> Google (8.8.8.8)            [админ]"
-        Write-Host "   [8] " -NoNewline -ForegroundColor Green; Write-Host "DNS -> автоматический (DHCP)       [админ]"
-        Write-Host "   [9] " -NoNewline -ForegroundColor Green; Write-Host "Сброс сети (Winsock + TCP/IP)      [админ]"
-        Write-Host "  [10] " -NoNewline -ForegroundColor Green; Write-Host "ONVIF-поиск камер (+ точный RTSP)"
+        Write-Host "   [6] " -NoNewline -ForegroundColor Green; Write-Host "Скорость между ПК (Ethr: сервер/клиент)"
+        Write-Host "   [7] " -NoNewline -ForegroundColor Green; Write-Host "DNS -> Cloudflare (1.1.1.1)        [админ]"
+        Write-Host "   [8] " -NoNewline -ForegroundColor Green; Write-Host "DNS -> Google (8.8.8.8)            [админ]"
+        Write-Host "   [9] " -NoNewline -ForegroundColor Green; Write-Host "DNS -> автоматический (DHCP)       [админ]"
+        Write-Host "  [10] " -NoNewline -ForegroundColor Green; Write-Host "Сброс сети (Winsock + TCP/IP)      [админ]"
+        Write-Host "  [11] " -NoNewline -ForegroundColor Green; Write-Host "ONVIF-поиск камер (+ точный RTSP)"
         Write-Host "   [0] " -NoNewline -ForegroundColor Red;   Write-Host "Назад"
         Write-Host ""
         $c = (Read-Host "  Выбор").Trim()
@@ -1639,11 +1674,12 @@ function Show-NetworkMenu {
             '3' { $h = Read-Host "   Хост или IP"; if ($h) { Test-Connection -ComputerName $h -Count 4 -ErrorAction SilentlyContinue | Format-Table -AutoSize | Out-Host }; Wait-Continue }
             '4' { $h = Read-Host "   Хост или IP"; if ($h) { tracert $h | Out-Host }; Wait-Continue }
             '5' { $h = Read-Host "   Хост или IP"; if ($h) { pathping -n $h | Out-Host }; Wait-Continue }
-            '6' { Switch-Dns '1.1.1.1', '1.0.0.1'; Wait-Continue }
-            '7' { Switch-Dns '8.8.8.8', '8.8.4.4'; Wait-Continue }
-            '8' { Switch-Dns @();                  Wait-Continue }
-            '9' { Repair-Network;                  Wait-Continue }
-            '10' { Show-OnvifScan;                 Wait-Continue }
+            '6' { Invoke-Ethr;                     Wait-Continue }
+            '7' { Switch-Dns '1.1.1.1', '1.0.0.1'; Wait-Continue }
+            '8' { Switch-Dns '8.8.8.8', '8.8.4.4'; Wait-Continue }
+            '9' { Switch-Dns @();                  Wait-Continue }
+            '10' { Repair-Network;                 Wait-Continue }
+            '11' { Show-OnvifScan;                 Wait-Continue }
             '0' { return }
             default { Write-Host "`n  Неверный выбор." -ForegroundColor Yellow; Start-Sleep 1 }
         }
