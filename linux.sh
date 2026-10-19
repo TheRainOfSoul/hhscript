@@ -497,6 +497,7 @@ tw_ssh_harden() {
   $SUDO systemctl restart ssh 2>/dev/null || $SUDO systemctl restart sshd 2>/dev/null
   log "SSH hardening applied (key-only)"
   ui_msg "SSH hardened. Verify a new login in a SEPARATE session before closing this one!"
+  ui_yesno "Run ssh-audit on localhost now to check what is left?" && nd_sshaudit localhost
 }
 
 # ===========================================================================
@@ -515,6 +516,7 @@ sec_netdiag() {
       "iperf3 - bandwidth between hosts" \
       "ethr - bandwidth, works with Windows" \
       "speedtest - internet speed" \
+      "ssh-audit - check SSH host for weak crypto" \
       "<- Back") || return
     case "$pick" in
       "Network Doctor"*) nd_doctor ;;
@@ -525,6 +527,7 @@ sec_netdiag() {
       "iperf3"*)     nd_iperf ;;
       "ethr"*)       nd_ethr ;;
       "speedtest"*)  nd_speedtest ;;
+      "ssh-audit"*)  nd_sshaudit ;;
       *) return ;;
     esac
   done
@@ -727,6 +730,23 @@ nd_speedtest() {
   ensure_pkg speedtest-cli || { pause; return; }
   ui_msg "Measuring internet speed..."
   speedtest-cli 2>&1 | page
+  pause
+}
+
+# ssh-audit: enumerate a host's SSH key-exchange/cipher/MAC algorithms and flag
+# weak ones. With an argument audits that host on port 22 (used right after SSH
+# hardening); without one, asks for host (default localhost) and port.
+nd_sshaudit() {
+  ensure_pkg ssh-audit || { pause; return; }
+  local h p
+  if [ -n "${1:-}" ]; then
+    h=$1; p=22
+  else
+    h=$(ui_input "SSH host to audit" "localhost"); [ -n "$h" ] || return
+    p=$(ui_input "SSH port" "22"); [ -n "$p" ] || p=22
+  fi
+  ui_msg "Auditing SSH on $h:$p ..."
+  ssh-audit -p "$p" "$h" 2>&1 | page
   pause
 }
 
