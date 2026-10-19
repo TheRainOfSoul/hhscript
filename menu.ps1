@@ -1624,11 +1624,12 @@ function Show-NetworkMenu {
         Write-Host "   [2] " -NoNewline -ForegroundColor Green; Write-Host "Адаптеры: IP / MAC / скорость"
         Write-Host "   [3] " -NoNewline -ForegroundColor Green; Write-Host "Ping хоста"
         Write-Host "   [4] " -NoNewline -ForegroundColor Green; Write-Host "Трассировка (tracert)"
-        Write-Host "   [5] " -NoNewline -ForegroundColor Green; Write-Host "DNS -> Cloudflare (1.1.1.1)        [админ]"
-        Write-Host "   [6] " -NoNewline -ForegroundColor Green; Write-Host "DNS -> Google (8.8.8.8)            [админ]"
-        Write-Host "   [7] " -NoNewline -ForegroundColor Green; Write-Host "DNS -> автоматический (DHCP)       [админ]"
-        Write-Host "   [8] " -NoNewline -ForegroundColor Green; Write-Host "Сброс сети (Winsock + TCP/IP)      [админ]"
-        Write-Host "   [9] " -NoNewline -ForegroundColor Green; Write-Host "ONVIF-поиск камер (+ точный RTSP)"
+        Write-Host "   [5] " -NoNewline -ForegroundColor Green; Write-Host "Трассировка + потери на узлах (pathping)"
+        Write-Host "   [6] " -NoNewline -ForegroundColor Green; Write-Host "DNS -> Cloudflare (1.1.1.1)        [админ]"
+        Write-Host "   [7] " -NoNewline -ForegroundColor Green; Write-Host "DNS -> Google (8.8.8.8)            [админ]"
+        Write-Host "   [8] " -NoNewline -ForegroundColor Green; Write-Host "DNS -> автоматический (DHCP)       [админ]"
+        Write-Host "   [9] " -NoNewline -ForegroundColor Green; Write-Host "Сброс сети (Winsock + TCP/IP)      [админ]"
+        Write-Host "  [10] " -NoNewline -ForegroundColor Green; Write-Host "ONVIF-поиск камер (+ точный RTSP)"
         Write-Host "   [0] " -NoNewline -ForegroundColor Red;   Write-Host "Назад"
         Write-Host ""
         $c = (Read-Host "  Выбор").Trim()
@@ -1637,11 +1638,12 @@ function Show-NetworkMenu {
             '2' { Show-AdapterInfo; Wait-Continue }
             '3' { $h = Read-Host "   Хост или IP"; if ($h) { Test-Connection -ComputerName $h -Count 4 -ErrorAction SilentlyContinue | Format-Table -AutoSize | Out-Host }; Wait-Continue }
             '4' { $h = Read-Host "   Хост или IP"; if ($h) { tracert $h | Out-Host }; Wait-Continue }
-            '5' { Switch-Dns '1.1.1.1', '1.0.0.1'; Wait-Continue }
-            '6' { Switch-Dns '8.8.8.8', '8.8.4.4'; Wait-Continue }
-            '7' { Switch-Dns @();                  Wait-Continue }
-            '8' { Repair-Network;                  Wait-Continue }
-            '9' { Show-OnvifScan;                  Wait-Continue }
+            '5' { $h = Read-Host "   Хост или IP"; if ($h) { pathping -n $h | Out-Host }; Wait-Continue }
+            '6' { Switch-Dns '1.1.1.1', '1.0.0.1'; Wait-Continue }
+            '7' { Switch-Dns '8.8.8.8', '8.8.4.4'; Wait-Continue }
+            '8' { Switch-Dns @();                  Wait-Continue }
+            '9' { Repair-Network;                  Wait-Continue }
+            '10' { Show-OnvifScan;                 Wait-Continue }
             '0' { return }
             default { Write-Host "`n  Неверный выбор." -ForegroundColor Yellow; Start-Sleep 1 }
         }
