@@ -30,7 +30,8 @@ $Programs = @(
     @{ Name = 'qBittorrent';          Winget = 'qBittorrent.qBittorrent';         Url = 'https://www.qbittorrent.org/download' }
     @{ Name = 'Notepad++';            Winget = 'Notepad++.Notepad++';             Url = 'https://notepad-plus-plus.org/downloads/' }
     # --- Удалёнка / доступ ---
-    @{ Group = 'Удалёнка / доступ'; Name = 'AnyDesk';              Winget = 'AnyDesk.AnyDesk';                  Url = 'https://anydesk.com/download' }
+    @{ Group = 'Удалёнка / доступ'; Name = 'HHDevice — постоянный доступ в HHDesk'; Download = 'https://agent.hhtdom.ru/device'; File = 'HHDevice.exe' }
+    @{ Name = 'AnyDesk';              Winget = 'AnyDesk.AnyDesk';                  Url = 'https://anydesk.com/download' }
     @{ Name = 'TightVNC';             Winget = 'GlavSoft.TightVNC';               Url = 'https://www.tightvnc.com/download.php' }
     @{ Name = 'mRemoteNG';            Winget = 'mRemoteNG.mRemoteNG';             Url = 'https://mremoteng.org/download' }
     @{ Name = 'MobaXterm';            Winget = 'Mobatek.MobaXterm';               Url = 'https://mobaxterm.mobatek.net/download.html' }
